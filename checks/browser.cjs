@@ -12,8 +12,17 @@ const event = {id:'123', date:'2026-11-06T23:00:00Z', competitions:[{
   status:{type:{state:'pre'}}, competitors:[
     {homeAway:'home', team:{id:'1', abbreviation:'ATL'}},
     {homeAway:'away', team:{id:'2', abbreviation:'BOS'}}]}]};
+// Like ESPN in the morning: the undated scoreboard still lists last night's finished games, and the dated one
+// has today's. slate 'tomorrow' = every game today has started, so the page must show tomorrow's.
+const finishedEvent = {...event, id:'99', competitions:[{...event.competitions[0], status:{type:{state:'post'}}}]};
+const tomorrowEvent = {...event, date:'2026-11-07T23:00:00Z'};
+let slate = 'today';
 function fixture(url) {
-  if (url.includes('/scoreboard')) return {season:{year:2027}, events:[event]};
+  if (url.includes('/scoreboard')) {
+    if (url.includes('dates=20261106')) return {leagues:[{season:{year:2027}}], events:[slate === 'today' ? event : finishedEvent]};
+    if (url.includes('dates=20261107')) return {leagues:[{season:{year:2027}}], events:[tomorrowEvent]};
+    return {season:{year:2027}, events:[finishedEvent]};
+  }
   if (url.includes('/injuries')) return {injuries:[]};
   if (url.includes('/propBets')) return {items:[-110,-110].map(price => ({
     type:{name:'Total Points'}, athlete:{$ref:athlete},
@@ -55,6 +64,15 @@ async function fixtureChecks(browser, url, device) {
   await page.locator('[data-open]').first().click();
   assert.equal(await page.locator('.detail').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
+
+  slate = 'tomorrow';
+  await refresh(page);
+  assert.equal(await page.evaluate(() => window.__S.today), '2026-11-07', "After today's games start, show tomorrow");
+  assert.equal(await page.locator('article.card').count(), 1, "Tomorrow's lines must render");
+  slate = 'today';
+  await refresh(page);
+  assert.equal(await page.evaluate(() => window.__S.today), '2026-11-06');
 
   mode = 'primary-down';
   await refresh(page);
@@ -124,7 +142,14 @@ async function liveChecks(browser, url) {
     assert.deepEqual(errors,[]);
     // These probes run even after tip-off, when the app has no upcoming games to load.
     await page.evaluate(async () => {
-      const score=await get(SITE+'/scoreboard');
+      const score=await get(SITE+'/scoreboard?dates='+S.today.replaceAll('-',''));
+      let lined = false;  // a game still to come that has DraftKings player lines on ESPN
+      for (const e of score.events.filter(e => e.competitions[0].status.type.state==='pre')) {
+        const odds=await get(`${CORE}/events/${e.id}/competitions/${e.id}/odds`);
+        const dk=odds?.items?.find(o => o.provider?.name==='Draft Kings');
+        if (dk?.propBets && (await get(dk.propBets.$ref+'&limit=5'))?.items?.length) { lined = true; break; }
+      }
+      if (lined && !S.props.length) throw new Error('ESPN has player lines for '+S.today+' but the page shows none');
       const logs=await get(LOG+'1966/gamelog');
       if (!logs || !Array.isArray(logs.seasonTypes)) throw new Error('Game log format changed');
       const event=score.events[0];

@@ -235,7 +235,7 @@ function saveBoard() {
 }
 function restoreBoard() {
   const saved = store.get(SNAPSHOT_KEY);
-  if (!saved || saved.today !== et(new Date().toISOString()) || !Number.isFinite(saved.time)
+  if (!saved || !(saved.today >= et(new Date().toISOString())) || !Number.isFinite(saved.time)
       || saved.time > Date.now() || !Array.isArray(saved.games) || !Array.isArray(saved.props)) return false;
   S.today = saved.today; S.seasonYear = saved.seasonYear;
   S.games = saved.games.filter(g => Date.parse(g.tip) > Date.now());
@@ -627,11 +627,22 @@ async function load() {
   S.games = []; S.props = [];
   S.injuries = {};
   try {
-    const score = await get(SITE + '/scoreboard');
-    if (!score || !Array.isArray(score.events)) throw new Error('Scoreboard format changed');
-    const events = score.events || [];
-    S.seasonYear = (score.season || {}).year || new Date().getFullYear() + 1;
-    S.today = events.length ? et(events[0].date) : et(new Date().toISOString());
+    // Ask for today's ET date: ESPN's undated scoreboard keeps showing last night's (finished) games well into
+    // the morning, which left the page with no lines. Once every game today has started, show tomorrow's slate.
+    const dated = async day => {
+      const s = await get(SITE + '/scoreboard?dates=' + day.replaceAll('-', ''));
+      if (!s || !Array.isArray(s.events)) throw new Error('Scoreboard format changed');
+      return s;
+    };
+    const pre = s => s.events.some(e => ((e.competitions[0] || {}).status || {}).type?.state === 'pre');
+    let day = et(new Date().toISOString()), score = await dated(day);
+    if (!pre(score)) {
+      const next = et(new Date(Date.now() + 864e5).toISOString()), later = await dated(next);
+      if (pre(later)) { day = next; score = later; }
+    }
+    const events = score.events;
+    S.seasonYear = (score.season || ((score.leagues || [])[0] || {}).season || {}).year || new Date().getFullYear() + 1;
+    S.today = day;
     const warnings = [];
     const [, gameErrors] = await Promise.all([
       loadInjuries().catch(e => warnings.push('Injuries: ' + e)), pool(events, 5, loadGame)]);
