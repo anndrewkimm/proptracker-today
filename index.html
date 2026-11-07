@@ -486,7 +486,7 @@ function factors(c) {
     const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
     out.push([soft || tough ? soft === more : null, `Against ${c.opp}, players get ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff >= 0 ? 'more' : 'fewer'} ${label} than their average (${ordinal(c.def.rank)} of ${c.def.of}).`]);
   }
-  if (c.mates.length) out.push([more, `Teammates out: ${c.mates.join(', ')}. That can mean more shots and minutes.`]);
+  if (c.mates.length) out.push([null, `Teammates out: ${c.mates.join(', ')}. Role changes are possible; an absence alone does not tell us who benefits.`]);
   if (c.oppsOut.length) out.push([null, `${c.opp} out: ${c.oppsOut.join(', ')}.`]);
   if (c.minL5 && c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 3) {
     const up = c.minL5 > c.minSeason;
@@ -500,6 +500,27 @@ function factors(c) {
   if (c.kind === 'goblin') out.push([null, `Goblin-like line: much easier than a coin flip. On PrizePicks a line like this is usually a goblin (More only, lower payout).${near}`]);
   if (c.kind === 'demon') out.push([false, `Demon-like line: Less is much easier than a coin flip, so on PrizePicks this line would be a demon, which is More only. This Less probably isn't offered.${near}`]);
   if (c.injury) out.push([false, `Listed ${c.injury.toLowerCase()} by ESPN.`]);
+  out.push(...rotationEvidence(c).map(text => [null, text]));
+  return out;
+}
+
+function rotationEvidence(c) {
+  const rows = c.log.filter(g => g.cur && g.d < S.today && Number.isFinite(g.m) && g.m > 0)
+    .sort((a, b) => b.d.localeCompare(a.d));
+  const recent = rows.slice(0, 10), minutes = recent.map(g => g.m).sort((a,b) => a-b);
+  if (!minutes.length) return ['Rotation evidence unavailable for this season.'];
+  const n = minutes.length, median = n % 2 ? minutes[(n-1)/2] : (minutes[n/2-1]+minutes[n/2])/2;
+  const out = [`Observed minutes: median ${round1(median)}, range ${minutes[0]}–${minutes[n-1]} over ${n} recent appearances. Includes injury, foul and overtime effects; not a forecast or a verified coaching tendency. Team changes may affect this season sample.`];
+  if (n < 5) out.push('Small rotation sample: fewer than 5 appearances this season.');
+  const played = rows.filter(g => dayGap(S.today, g.d) >= 1 && dayGap(S.today, g.d) <= 3).length;
+  if (played >= 2) out.push(`Workload: played ${played} of the previous 3 days; playing today would be ${played+1} appearances in 4 days.`);
+  const b2b = [], rested = [];
+  for (let i=0; i < Math.min(rows.length-1, 20); i++) {
+    const gap = dayGap(rows[i].d, rows[i+1].d);
+    if (gap >= 1 && gap <= 7) (gap === 1 ? b2b : rested).push(rows[i].m);
+  }
+  if (b2b.length >= 3 && rested.length >= 3) out.push(`After playing the previous day: ${round1(mean(b2b))} minutes (${b2b.length} games), vs ${round1(mean(rested))} with days off (${rested.length} games). Observed usage, not a confirmed coaching policy.`);
+  out.push('Rotation and workload context do not change the displayed probability.');
   return out;
 }
 

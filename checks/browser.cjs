@@ -61,6 +61,14 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true);
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  const rotation = await page.evaluate(() => rotationEvidence({log:[
+    {d:'2026-11-04', m:28, cur:true}, {d:'2026-11-03', m:36, cur:true},
+    {d:S.today, m:99, cur:true}, {d:'2025-12-01', m:99, cur:false}
+  ]}).join(' '));
+  assert.match(rotation, /median 32/);
+  assert.match(rotation, /2 recent appearances/);
+  assert.doesNotMatch(rotation, /99/);
+  assert.match(rotation, /do not change the displayed probability/);
   await page.locator('[data-add]').first().click();
   assert.equal(await page.locator('#mine').isVisible(), true);
   await page.locator('[data-open]').first().click();
