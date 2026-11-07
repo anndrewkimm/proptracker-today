@@ -109,7 +109,8 @@ summary { cursor: pointer; font-weight: 600 }
 </main>
 <script>
 'use strict';
-const SITE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
+// The web API host allows browser requests; the site.api host can reject them with 403.
+const SITE = 'https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba';
 const CORE = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba';
 const LOG = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/';
 const NBA_CODE = {GS: 'GSW', NY: 'NYK', NO: 'NOP', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS'};
