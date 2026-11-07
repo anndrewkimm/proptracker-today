@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PropTracker">
+<meta name="robots" content="noindex">
+<title>PropTracker Today</title>
+<style>
+/* A phone-first scoreboard list: one column of player rows, the chance as the loudest thing on each. */
+:root {
+  --bg: #f8f9fc; --panel: #ffffff; --soft: #eef0f7; --fg: #20263b; --muted: #667085; --line: #d9dce8;
+  --accent: #7c3aed; --accent-soft: #7c3aed1f; --good: #15803d; --good-soft: #16a34a1f; --bad: #b91c1c;
+  --bad-soft: #dc26261f; --warn: #b45309; --warn-soft: #f59e0b22; --photo: #273247;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12141d; --panel: #1b1e2b; --soft: #262a3a; --fg: #eceef6; --muted: #9aa1b5; --line: #30354a;
+  --accent: #a78bfa; --accent-soft: #a78bfa26; --good: #4ade80; --good-soft: #4ade8022; --bad: #f87171;
+  --bad-soft: #f8717122; --warn: #fbbf24; --warn-soft: #fbbf2422; --photo: #30354a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12141d; --panel: #1b1e2b; --soft: #262a3a; --fg: #eceef6; --muted: #9aa1b5; --line: #30354a;
+  --accent: #a78bfa; --accent-soft: #a78bfa26; --good: #4ade80; --good-soft: #4ade8022; --bad: #f87171;
+  --bad-soft: #f8717122; --warn: #fbbf24; --warn-soft: #fbbf2422; --photo: #30354a; color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 40px max(14px, env(safe-area-inset-left, 0px)) }
+main { max-width: 640px; margin: 0 auto; display: grid; gap: 10px }
+header { display: flex; align-items: center; justify-content: space-between; gap: 8px }
+h1 { font-size: 26px; letter-spacing: -.03em; margin: 0 }
+.sub { color: var(--muted); font-size: 12.5px }
+button, select, input { font: inherit; color: inherit }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; cursor: pointer; min-height: 38px }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600 }
+input, select { width: 100%; background: var(--soft); border: 0; border-radius: 10px; padding: 9px 12px; min-height: 40px }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none }
+.chips button { flex: none; min-height: 34px; padding: 4px 11px; font-size: 13.5px; border-radius: 17px }
+details.box, .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px }
+summary { cursor: pointer; font-weight: 600 }
+.filters { display: grid; gap: 8px; margin-top: 8px }
+.bar { height: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; margin-top: 4px }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0 }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: grid; gap: 7px }
+.top { display: flex; align-items: center; gap: 10px }
+.photo { flex: none; width: 54px; height: 54px; border-radius: 50%; background: var(--photo); color: #e4e9f5; position: relative; overflow: hidden; display: grid; place-items: center; font-size: 17px }
+.photo img { position: absolute; left: 50%; top: 2px; transform: translateX(-50%); height: 54px; max-width: none }
+.who { flex: 1; min-width: 0 }
+.who strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pick { font-weight: 600; margin-top: 1px }
+.rate { flex: none; text-align: right; font-variant-numeric: tabular-nums }
+.rate b { display: block; font-size: 24px; line-height: 1.1 }
+.stars { color: var(--accent); font-size: 13px; letter-spacing: 1px }
+.tags { display: flex; flex-wrap: wrap; gap: 4px }
+.tag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: var(--warn-soft); color: var(--warn) }
+.tag.good { background: var(--good-soft); color: var(--good) } .tag.bad { background: var(--bad-soft); color: var(--bad) }
+.tag.plain { background: var(--soft); color: var(--muted) } .tag.goblin { background: var(--accent-soft); color: var(--accent) }
+.row { display: flex; gap: 8px } .row button { flex: 1 }
+.green { color: var(--good) } .red { color: var(--bad) }
+.detail { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 14px }
+.detail h3 { font-size: 13px; margin: 0 0 3px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em }
+.detail ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px }
+.detail li { padding-left: 18px; text-indent: -18px }
+.chart { display: flex; align-items: flex-end; gap: 3px; height: 112px; position: relative; margin-top: 14px }
+.col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums }
+.col i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 2px }
+.col small { font-size: 8.5px; white-space: nowrap; overflow: hidden; max-width: 100% }
+.lineat { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted) }
+.table { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums }
+.empty { text-align: center; color: var(--muted); padding: 24px 8px }
+.mine li { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0 }
+.mine ul { list-style: none; margin: 6px 0 0; padding: 0 }
+.mine button { min-height: 30px; padding: 2px 9px; font-size: 13px }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Today</h1><div class="sub" id="status">Loading today's games…</div></div>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+  <div class="bar" id="barWrap" hidden><i id="bar"></i></div>
+  <div class="box mine" id="mine" hidden></div>
+  <input id="search" type="search" placeholder="Player or team" aria-label="Search player or team" autocomplete="off">
+  <div class="chips" id="stats" role="group" aria-label="Stat"></div>
+  <details class="box">
+    <summary>Filters and games</summary>
+    <div class="filters">
+      <div class="chips" id="lineTypes" role="group" aria-label="Line type"></div>
+      <div class="chips" id="sides" role="group" aria-label="Side"></div>
+      <div class="chips" id="sorts" role="group" aria-label="Sort"></div>
+      <select id="game" aria-label="Game"></select>
+      <label><input id="best" type="checkbox" checked style="width:auto;min-height:0"> Best pick per player</label>
+      <div class="sub" id="games"></div>
+    </div>
+  </details>
+  <details class="box">
+    <summary>How to read this</summary>
+    <p class="sub">Picks for today's NBA games that haven't started, using DraftKings' lines. Check the PrizePicks line before you pick.
+    <b>Chance</b> is DraftKings' odds with their cut removed, adjusted for Less vs More and his last 10 games.
+    <b>Stars</b> count two signs that have beaten the odds, on new games too: a Less pick, and past the line in 6+ of his last 10.
+    <b>Standard</b> means close to a coin flip, like a regular PrizePicks line. <b>Goblin-like</b> is an easy More that would pay less. <b>Demon-like</b> is an easy Less at a line PrizePicks would make a demon, which is More only, so it probably isn't offered.
+    Break-even on PrizePicks is about 54% a pick (5-6 Flex) to 58% (2-pick Power).</p>
+  </details>
+  <div class="sub" id="count"></div>
+  <div id="list" style="display:grid;gap:10px"></div>
+  <button id="more" type="button" hidden>Show 20 more</button>
+</main>
+<script>
+'use strict';
+const SITE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
+const CORE = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba';
+const LOG = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/';
+const NBA_CODE = {GS: 'GSW', NY: 'NYK', NO: 'NOP', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS'};
+const PROP_STATS = {'Total Points': 'points', 'Total Rebounds': 'rebounds', 'Total Assists': 'assists',
+  'Total 3-Point Field Goals': 'threes_made', 'Total Steals': 'steals', 'Total Blocks': 'blocks',
+  'Total Points, Rebounds, and Assists': 'pts+rebs+asts', 'Total Points and Rebounds': 'pts+rebs',
+  'Total Points and Assists': 'pts+asts', 'Total Assists and Rebounds': 'rebs+asts'};
+const STAT_NAME = {points: 'Points', rebounds: 'Rebounds', assists: 'Assists', threes_made: '3-PT Made', steals: 'Steals',
+  blocks: 'Blocks', 'pts+rebs+asts': 'PRA', 'pts+rebs': 'Pts+Rebs', 'pts+asts': 'Pts+Asts', 'rebs+asts': 'Rebs+Asts'};
+const VALUE = {points: g => g.p, rebounds: g => g.r, assists: g => g.a, threes_made: g => g.tm, steals: g => g.s, blocks: g => g.b,
+  'pts+rebs+asts': g => g.p + g.r + g.a, 'pts+rebs': g => g.p + g.r, 'pts+asts': g => g.p + g.a, 'rebs+asts': g => g.r + g.a};
+const VOLUME = {points: ['fa', 'Shots'], threes_made: ['ta', '3-point attempts'], 'pts+rebs+asts': ['fa', 'Shots'], 'pts+rebs': ['fa', 'Shots'], 'pts+asts': ['fa', 'Shots']};
+// Same numbers as src/proptracker/today.py; see docs/MODEL.md for where they come from.
+const FORM_GAMES = 10, FORM_MIN = 5, GOBLIN_AT = .55, STRONG_FORM = .6, SPREAD_GAMES = 20, MAX_SIGNS = 2;
+const CHANCE = {intercept: -0.041, market: 0.871, less: 0.166, form: 0.215};  // today.py CHANCE_*, keep in step
+const chance = (market, more, formRate) => {
+  const m = Math.min(Math.max(market, .02), .98);
+  const z = CHANCE.intercept + CHANCE.market * Math.log(m / (1 - m)) + (more ? 0 : CHANCE.less) + CHANCE.form * ((formRate ?? .5) - .5);
+  return 1 / (1 + Math.exp(-z));
+};
+const OUT = ['Out', 'Doubtful'], LOG_HOURS = 3;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const https = u => u.replace('http://', 'https://').replace('.pvt/', '.com/');
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* full or blocked: just refetch next time */ } },
+};
+async function get(url) {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(https(url));
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch (e) {
+      if (i === 2) throw e;
+      await new Promise(ok => setTimeout(ok, 800 * (i + 1)));
+    }
+  }
+}
+async function pool(items, size, work) {
+  let next = 0;
+  await Promise.all(Array.from({length: Math.min(size, items.length)}, async () => {
+    while (next < items.length) await work(items[next++]).catch(() => {});
+  }));
+}
+
+// --- the math, matching today.py -----------------------------------------------------------
+const implied = a => a < 0 ? -a / (-a + 100) : 100 / (a + 100);
+const fairOver = (o, u) => implied(o) / (implied(o) + implied(u));
+function normCdf(z) {  // Abramowitz & Stegun 26.2.17
+  const t = 1 / (1 + .2316419 * Math.abs(z)), d = .3989423 * Math.exp(-z * z / 2);
+  const p = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+}
+function normInv(p) {  // Acklam's approximation
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+  const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+  const c = [-.007784894002430293, -.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [.007784695709041462, .3224671290700398, 2.445134137142996, 3.754408661907416];
+  const lo = (x) => (((((c[0]*x+c[1])*x+c[2])*x+c[3])*x+c[4])*x+c[5]) / ((((d[0]*x+d[1])*x+d[2])*x+d[3])*x+1);
+  if (p < .02425) return lo(Math.sqrt(-2 * Math.log(p)));
+  if (p > 1 - .02425) return -lo(Math.sqrt(-2 * Math.log(1 - p)));
+  const q = p - .5, r = q * q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5]) * q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+const mean = v => v.reduce((x, y) => x + y, 0) / v.length;
+const round1 = x => Math.round(x * 10) / 10;
+const pstdev = v => { const m = mean(v); return Math.sqrt(mean(v.map(x => (x - m) ** 2))); };
+const clampP = p => Math.min(Math.max(p, .02), .98);
+function fairLine(line, pOver, values) {
+  if (values.length < 5) return null;
+  const est = line + normInv(clampP(pOver)) * Math.max(pstdev(values), .5);
+  return Math.max(.5, Math.round(est - .5) + .5);
+}
+function overAt(line, pOver, values, target) {
+  const sd = Math.max(pstdev(values), .5);
+  return normCdf((line + normInv(clampP(pOver)) * sd - target) / sd);
+}
+const ordinal = n => n + (n % 100 >= 10 && n % 100 <= 20 ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th'));
+const et = iso => new Intl.DateTimeFormat('en-CA', {timeZone: 'America/New_York'}).format(new Date(iso));
+const dayGap = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+
+// --- data ----------------------------------------------------------------------------------
+const S = {games: [], props: [], athletes: {}, logs: {}, injuries: {}, today: null, seasonYear: null, shown: 10, open: new Set(),
+  stat: 'all', side: 'All', kind: 'Standard', sort: 'Most stars', defense: {}};
+window.__S = S;
+
+function parseLog(json, current) {
+  if (!json) return [];
+  const labels = json.labels || [];
+  const at = n => labels.indexOf(n);
+  const rows = [];
+  for (const type of json.seasonTypes || []) {
+    if (!/regular/i.test(type.displayName || '')) continue;
+    for (const cat of type.categories || []) for (const e of cat.events || []) {
+      const info = (json.events || {})[e.eventId], s = e.stats || [];
+      if (!info || !s.length) continue;
+      const min = parseFloat(s[at('MIN')]) || 0;
+      if (min <= 0) continue;
+      const made = (l, i) => parseInt(String(s[at(l)]).split('-')[i]) || 0;
+      const num = l => parseInt(s[at(l)]) || 0;
+      const code = (info.opponent || {}).abbreviation || '';
+      rows.push({d: et(info.gameDate), o: NBA_CODE[code] || code, h: info.atVs === 'vs' ? 1 : 0, m: min, cur: current ? 1 : 0,
+        p: num('PTS'), r: num('REB'), a: num('AST'), s: num('STL'), b: num('BLK'), tm: made('3PT', 0), ta: made('3PT', 1), fa: made('FG', 1)});
+    }
+  }
+  return rows.sort((x, y) => (x.d < y.d ? 1 : -1));
+}
+async function loadLog(id) {
+  const key = 'pt.log.' + id, saved = store.get(key);
+  if (saved && Date.now() - saved.t < LOG_HOURS * 36e5) { S.logs[id] = saved.g; return; }
+  let games = parseLog(await get(LOG + id + '/gamelog'), true);
+  if (games.length < 25) {
+    const old = parseLog(await get(LOG + id + '/gamelog?season=' + (S.seasonYear - 1)), false);
+    games = games.concat(old).slice(0, 40);
+  }
+  S.logs[id] = games.filter(g => g.d < S.today);
+  store.set(key, {t: Date.now(), g: S.logs[id]});
+}
+async function loadAthlete(id, ref) {
+  const key = 'pt.ath.' + id, saved = store.get(key);
+  if (saved && Date.now() - saved.t < 7 * 864e5) { S.athletes[id] = saved; return; }
+  const a = await get(ref);
+  if (!a) return;
+  const team = ((a.team || {}).$ref || '').match(/teams\/(\d+)/);
+  S.athletes[id] = {t: Date.now(), name: a.displayName, team: team ? team[1] : null};
+  store.set(key, S.athletes[id]);
+}
+async function loadInjuries() {
+  const json = await get(SITE + '/injuries');
+  const out = {};
+  for (const team of (json && json.injuries) || []) for (const i of team.injuries || []) {
+    const a = i.athlete || {}, name = a.displayName;
+    if (name) out[name] = {status: i.status, team: team.id, text: i.shortComment || ''};
+  }
+  S.injuries = out;
+}
+async function loadGame(event) {
+  const comp = event.competitions[0];
+  if (comp.status.type.state !== 'pre') return;
+  const sides = {};
+  for (const c of comp.competitors) {
+    const code = c.team.abbreviation;
+    sides[c.homeAway] = {id: c.team.id, code: NBA_CODE[code] || code};
+  }
+  const odds = await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
+  const items = (odds && odds.items) || [];
+  const dk = items.find(o => (o.provider || {}).name === 'Draft Kings');
+  if (!dk) return;
+  const game = {id: event.id, home: sides.home, away: sides.away, matchup: `${sides.away.code} @ ${sides.home.code}`,
+    spread: dk.spread ?? null, total: dk.overUnder ?? null, tip: event.date};
+  S.games.push(game);
+  if (!dk.propBets) return;
+  const bets = await get(dk.propBets.$ref + '&limit=1000');
+  const grouped = new Map();
+  for (const item of (bets && bets.items) || []) {
+    const stat = PROP_STATS[(item.type || {}).name];
+    const ref = (item.athlete || {}).$ref || '';
+    const id = (ref.match(/athletes\/(\d+)/) || [])[1];
+    if (!stat || !id) continue;
+    const k = id + '|' + stat;
+    if (!grouped.has(k)) grouped.set(k, {id, stat, ref, rows: []});
+    grouped.get(k).rows.push(item);
+  }
+  for (const g of grouped.values()) {  // two rows on the same line, the first being the over
+    const [o, u] = g.rows;
+    const value = r => r && r.current && r.current.target && r.current.target.value;
+    if (g.rows.length !== 2 || value(o) !== value(u)) continue;
+    const over = parseInt(o.odds.american.value), under = parseInt(u.odds.american.value);
+    if (Number.isNaN(over) || Number.isNaN(under) || value(o) == null) continue;
+    S.props.push({game, id: g.id, stat: g.stat, ref: g.ref, line: value(o), over, under});
+  }
+}
+
+// How far each team holds players from their own averages, per stat, from every log loaded.
+function buildDefense() {
+  const sums = {};
+  for (const stat of Object.keys(VALUE)) sums[stat] = {};
+  for (const games of Object.values(S.logs)) {
+    const cur = games.filter(g => g.cur);
+    if (cur.length < 3) continue;
+    for (const stat of Object.keys(VALUE)) {
+      const avg = mean(cur.map(VALUE[stat]));
+      for (const g of cur) {
+        const e = sums[stat][g.o] || (sums[stat][g.o] = {n: 0, diff: 0});
+        e.n++; e.diff += VALUE[stat](g) - avg;
+      }
+    }
+  }
+  const out = {};
+  for (const [stat, teams] of Object.entries(sums)) {
+    const ranked = Object.entries(teams).filter(([, e]) => e.n >= 15).map(([t, e]) => [t, e.diff / e.n, e.n]).sort((a, b) => b[1] - a[1]);
+    out[stat] = {};
+    ranked.forEach(([t, diff, n], i) => { out[stat][t] = {rank: i + 1, of: ranked.length, diff, n}; });
+  }
+  S.defense = out;
+}
+
+function candidate(prop) {
+  const {game, id, stat, line, over, under} = prop;
+  const a = S.athletes[id];
+  if (!a) return null;
+  const inj = S.injuries[a.name];
+  if (inj && OUT.includes(inj.status)) return null;
+  const pOver = fairOver(over, under), more = pOver >= .5, market = more ? pOver : 1 - pOver;
+  const teamSide = a.team === game.home.id ? 'home' : a.team === game.away.id ? 'away' : null;
+  const team = teamSide ? game[teamSide] : null, opp = teamSide ? game[teamSide === 'home' ? 'away' : 'home'] : null;
+  const log = S.logs[id] || [], val = VALUE[stat];
+  const c = {id, stat, line, side: more ? 'more' : 'less', price: more ? over : under, market, score: market, pOver, name: a.name,
+    team: team && team.code, opp: opp && opp.code, isHome: teamSide === 'home', matchup: game.matchup, loaded: id in S.logs,
+    spread: game.spread == null || !teamSide ? null : game.spread * (teamSide === 'home' ? 1 : -1), total: game.total,
+    injury: inj ? inj.status : null, log};
+  const pass = v => more ? v > line : v < line;
+  const decided = v => v.filter(x => x !== line);
+  const values = log.map(val), recent = values.slice(0, FORM_GAMES);
+  const form = decided(recent);
+  c.formGames = form.length; c.formHits = form.filter(pass).length;
+  c.formRate = c.formGames >= FORM_MIN ? c.formHits / c.formGames : null;
+  c.score = chance(market, more, c.formRate);
+  const cur = log.filter(g => g.cur), last = log.filter(g => !g.cur);
+  if (cur.length) {
+    const sv = cur.map(val), d = decided(sv);
+    c.seasonAvg = round1(mean(sv)); c.seasonGames = d.length; c.seasonHits = d.filter(pass).length;
+    c.minSeason = round1(mean(cur.map(g => g.m)));
+    const venue = cur.filter(g => !!g.h === c.isHome).map(val);
+    c.venueAvg = venue.length ? round1(mean(venue)) : null; c.venueGames = venue.length;
+  }
+  if (last.length) c.lastAvg = round1(mean(last.map(val)));
+  const l20 = decided(values.slice(0, 20));
+  c.l20Games = l20.length; c.l20Hits = l20.filter(pass).length;
+  if (recent.length) {
+    const s = [...recent].sort((x, y) => x - y), n = s.length;
+    c.median = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    c.l5 = round1(mean(recent.slice(0, 5)));
+    c.minL5 = round1(mean(log.slice(0, 5).map(g => g.m)));
+    c.rest = dayGap(S.today, log[0].d) - 1;
+  }
+  if (VOLUME[stat] && cur.length) {
+    const [col, label] = VOLUME[stat];
+    c.volume = [label, round1(mean(log.slice(0, 5).map(g => g[col]))), round1(mean(cur.map(g => g[col])))];
+  }
+  c.vsOpp = opp ? log.filter(g => g.o === opp.code).map(val).slice(0, 6) : [];
+  const spreadValues = values.slice(0, SPREAD_GAMES);
+  c.fair = fairLine(line, pOver, spreadValues);
+  c.kind = market >= GOBLIN_AT ? (more ? 'goblin' : 'demon') : 'standard';
+  if (c.kind !== 'standard' && c.fair != null && c.fair !== line) {
+    const there = overAt(line, pOver, spreadValues, c.fair);
+    c.stdSide = there >= .5 ? 'more' : 'less'; c.stdChance = there >= .5 ? there : 1 - there;
+  }
+  c.signs = [];
+  if (!more) c.signs.push('Less pick');
+  if (c.formRate != null && c.formRate >= STRONG_FORM) c.signs.push(`${more ? 'Over' : 'Under'} in ${c.formHits} of last ${c.formGames}`);
+  const def = opp && (S.defense[stat] || {})[opp.code];
+  if (def) c.def = def;
+  c.mates = [];
+  c.oppsOut = [];
+  for (const [name, i] of Object.entries(S.injuries)) {
+    if (!OUT.includes(i.status) || name === a.name) continue;
+    if (team && i.team === team.id) c.mates.push(`${name} (${i.status})`);
+    if (opp && i.team === opp.id) c.oppsOut.push(`${name} (${i.status})`);
+  }
+  return c;
+}
+const stars = c => '★'.repeat(c.signs.length) + '☆'.repeat(MAX_SIGNS - c.signs.length);
+const pickText = c => `${c.side === 'more' ? 'More' : 'Less'} ${c.line} ${STAT_NAME[c.stat]}`;
+const key = c => `${S.today}|${c.id}|${c.stat}`;
+
+function tagReasons(c) {
+  const more = c.side === 'more', word = more ? 'over' : 'under', team = c.team || 'His team', label = STAT_NAME[c.stat].toLowerCase(), out = [];
+  const helpsLess = more ? '.' : ', which helps a Less.';
+  if (c.injury) out.push([c.injury, false, `Listed ${c.injury.toLowerCase()} by ESPN, so check that he's playing.`]);
+  if (c.rest === 0) out.push(['Back-to-back', !more, 'He played last night, so he may tire or play less' + helpsLess]);
+  if (c.minL5 && c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 4) {
+    const up = c.minL5 > c.minSeason;
+    out.push([up ? 'Minutes up' : 'Minutes down', up === more, `Playing ${Math.round(c.minL5)} minutes lately, ${up ? 'up' : 'down'} from ${Math.round(c.minSeason)} this season.`]);
+  }
+  if (c.spread != null && Math.abs(c.spread) >= 10) {
+    const lead = c.spread < 0 ? `${team} are favored by ${Math.abs(c.spread)}` : `${team} are ${c.spread}-point underdogs`;
+    out.push(['Blowout risk', !more, `${lead}. If it gets lopsided, starters can sit the 4th quarter` + helpsLess]);
+  }
+  if (c.formRate != null && c.formRate < c.market - .15) out.push(['Form disagrees', false, `The odds like this, but he went ${word} in only ${c.formHits} of his last ${c.formGames}.`]);
+  if (c.def && c.def.of >= 15) {
+    const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
+    if (soft || tough) {
+      const helps = soft === more, by = Math.abs(c.def.diff).toFixed(1);
+      out.push([helps ? 'Matchup helps' : 'Matchup hurts', helps, `Players get ${by} ${soft ? 'more' : 'fewer'} ${label} than usual against ${c.opp}.`]);
+    }
+  }
+  if (c.mates.length) {
+    const names = c.mates.map(n => n.split(' (')[0]);
+    out.push([`${names.length} teammate${names.length > 1 ? 's' : ''} out`, null, `${names.slice(0, 2).join(', ')}${names.length > 2 ? ` and ${names.length - 2} more` : ''} out. That can mean more shots and minutes for him.`]);
+  }
+  return out;
+}
+function factors(c) {
+  const more = c.side === 'more', word = more ? 'over' : 'under', label = STAT_NAME[c.stat], out = [];
+  const lean = r => r > .4 && r < .6 ? null : r >= .6;
+  out.push([true, `DraftKings prices ${more ? 'More' : 'Less'} ${c.line} at ${c.price > 0 ? '+' : ''}${c.price}: ${Math.round(c.market * 100)}% with the cut removed.`]);
+  if (c.formGames) out.push([lean(c.formHits / c.formGames), `Went ${word} ${c.line} in ${c.formHits} of his last ${c.formGames} games.`]);
+  if (c.seasonGames) out.push([lean(c.seasonHits / c.seasonGames), `This season: ${word} ${c.line} in ${c.seasonHits} of ${c.seasonGames} games, averaging ${c.seasonAvg}.`]);
+  if (c.l20Games > c.formGames) out.push([lean(c.l20Hits / c.l20Games), `Last ${c.l20Games} games: ${word} in ${c.l20Hits}.`]);
+  if (c.median != null) out.push([c.median === c.line ? null : (c.median > c.line) === more, `Middle game of his last 10: ${c.median} ${label}.`]);
+  if (c.l5 != null) out.push([(c.l5 > c.line) === more, `Averaging ${c.l5} ${label} over his last 5.`]);
+  if (c.lastAvg != null) out.push([null, `Last season he averaged ${c.lastAvg} ${label}.`]);
+  if (c.volume && c.volume[2]) {
+    const change = (c.volume[1] - c.volume[2]) / c.volume[2];
+    out.push([Math.abs(change) < .1 ? null : (change > 0) === more, `${c.volume[0]}: ${c.volume[1]} a game lately vs ${c.volume[2]} this season.`]);
+  }
+  if (c.vsOpp.length >= 2) {
+    const hits = c.vsOpp.filter(v => more ? v > c.line : v < c.line).length;
+    out.push([hits / c.vsOpp.length >= .5, `vs ${c.opp}: ${word} in ${hits} of his last ${c.vsOpp.length} (${c.vsOpp.join(', ')}).`]);
+  }
+  if (c.def && c.def.of >= 15) {
+    const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
+    out.push([soft || tough ? soft === more : null, `Against ${c.opp}, players get ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff >= 0 ? 'more' : 'fewer'} ${label} than their average (${ordinal(c.def.rank)} of ${c.def.of}).`]);
+  }
+  if (c.mates.length) out.push([more, `Teammates out: ${c.mates.join(', ')}. That can mean more shots and minutes.`]);
+  if (c.oppsOut.length) out.push([null, `${c.opp} out: ${c.oppsOut.join(', ')}.`]);
+  if (c.minL5 && c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 3) {
+    const up = c.minL5 > c.minSeason;
+    out.push([up === more, `Minutes ${up ? 'up' : 'down'}: ${c.minL5} a game lately vs ${c.minSeason} this season.`]);
+  }
+  if (c.venueAvg != null && c.venueGames >= 2) out.push([null, `Averages ${c.venueAvg} ${label} ${c.isHome ? 'at home' : 'on the road'} this season (${c.venueGames} games).`]);
+  if (c.rest === 0) out.push([!more, 'Second night of a back-to-back.']);
+  if (c.spread != null && Math.abs(c.spread) >= 10) out.push([!more, `Spread ${c.spread > 0 ? '+' : ''}${c.spread}: blowout risk, starters may sit the 4th quarter.`]);
+  if (c.total != null && (c.total >= 235 || c.total <= 215)) out.push([(c.total >= 235) === more, `Game total ${c.total}: ${c.total >= 235 ? 'fast, high-scoring' : 'slow, low-scoring'} game expected.`]);
+  const near = c.fair != null && c.fair !== c.line ? ` The standard line is probably near ${c.fair}${c.stdChance ? `, where ${c.stdSide === 'more' ? 'More' : 'Less'} is about ${Math.round(c.stdChance * 100)}%` : ''}.` : '';
+  if (c.kind === 'goblin') out.push([null, `Goblin-like line: much easier than a coin flip. On PrizePicks a line like this is usually a goblin (More only, lower payout).${near}`]);
+  if (c.kind === 'demon') out.push([false, `Demon-like line: Less is much easier than a coin flip, so on PrizePicks this line would be a demon, which is More only. This Less probably isn't offered.${near}`]);
+  if (c.injury) out.push([false, `Listed ${c.injury.toLowerCase()} by ESPN.`]);
+  return out;
+}
+
+// --- screen --------------------------------------------------------------------------------
+const mineKey = () => 'pt.mine.' + S.today;
+const mine = () => store.get(mineKey()) || {};
+function chips(el, options, get_, set_, label = x => x) {
+  el.innerHTML = options.map(o => `<button type="button" data-v="${esc(o)}" class="${get_() === o ? 'on' : ''}">${esc(label(o))}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (b) { set_(b.dataset.v); S.shown = 10; drawAll(); } };
+}
+function kindTag(c) {
+  if (c.kind === 'goblin') return '<span class="tag goblin">Goblin-like</span>';
+  if (c.kind === 'demon') return '<span class="tag bad">Demon-like · Less not on PP</span>';
+  return '<span class="tag plain">Standard</span>';
+}
+function chart(c) {
+  const games = c.log.slice(0, 10).reverse(), val = VALUE[c.stat];
+  if (!games.length) return '';
+  const top = Math.max(c.line, ...games.map(val), 1) * 1.1;
+  const bars = games.map(g => {
+    const v = val(g), hit = v === c.line ? null : (c.side === 'more') === (v > c.line);
+    const color = hit === null ? 'var(--muted)' : hit ? 'var(--good)' : 'var(--bad)';
+    return `<div class="col" title="${esc(g.d)} ${g.h ? 'vs' : '@'} ${esc(g.o)}">${v}<i style="height:${Math.max(2, v / top * 74)}px;background:${color}"></i><small>${esc(g.o)}</small></div>`;
+  }).join('');
+  return `<div><h3>${esc(STAT_NAME[c.stat])}: last ${games.length} games</h3><div class="chart">${bars}<div class="lineat" style="bottom:${c.line / top * 74 + 26}px"></div></div><div class="sub">Dashed line: ${c.line}. Green would have hit this pick.</div></div>`;
+}
+function detail(c, all) {
+  const list = (rows, mark, cls) => rows.length ? `<ul>${rows.map(r => `<li><span class="${cls}">${mark}</span> ${esc(r[1])}</li>`).join('')}</ul>` : '<div class="sub">Nothing</div>';
+  const f = factors(c), others = all.filter(o => o.id === c.id && o.stat !== c.stat).sort((a, b) => b.score - a.score);
+  const why = tagReasons(c);
+  return `<div class="detail">
+    <div class="sub"><b>${c.signs.length} of ${MAX_SIGNS} strong signs:</b> ${esc(c.signs.join(' · ') || 'none')}. Market ${Math.round(c.market * 100)}% · DK ${c.price > 0 ? '+' : ''}${c.price}.</div>
+    ${why.length ? `<ul>${why.map(([t, h, w]) => `<li><span class="${h === null ? '' : h ? 'green' : 'red'}">●</span> <b>${esc(t)}:</b> ${esc(w)}</li>`).join('')}</ul>` : ''}
+    <div><h3>For this pick</h3>${list(f.filter(r => r[0] === true), '✓', 'green')}</div>
+    <div><h3>Against it</h3>${list(f.filter(r => r[0] === false), '✗', 'red')}</div>
+    ${f.some(r => r[0] === null) ? `<div><h3>Also</h3>${list(f.filter(r => r[0] === null), '•', '')}</div>` : ''}
+    ${chart(c)}
+    ${others.length ? `<div><h3>His other lines today</h3><div class="table">${others.map(o => `<span>${esc(pickText(o))}</span><span>${Math.round(o.score * 100)}%</span><span class="stars">${stars(o)}</span>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+function card(c, all, chosen) {
+  const k = key(c), open = S.open.has(k);
+  const initials = esc(c.name.split(' ').slice(0, 2).map(w => w[0]).join(''));
+  const form = c.formGames ? `L${c.formGames}: ${c.formHits}/${c.formGames} ${c.side === 'more' ? 'over' : 'under'}` : (c.loaded ? 'No recent games' : 'Loading stats…');
+  const pills = tagReasons(c).map(([t, h]) => `<span class="tag ${h === null ? '' : h ? 'good' : 'bad'}">${esc(t)}</span>`).join('');
+  const ink = c.score >= .6 ? 'green' : c.score < .52 ? 'red' : '';
+  const std = c.stdChance ? `<div class="sub">Likely PrizePicks line ≈ ${c.fair}: ${c.stdSide === 'more' ? 'More' : 'Less'} ${Math.round(c.stdChance * 100)}%</div>` : '';
+  return `<article class="card">
+    <div class="top">
+      <div class="photo">${initials}<img alt="" loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${esc(c.id)}.png"></div>
+      <div class="who"><strong>${esc(c.name)}</strong><div class="sub">${esc(c.team || '?')} ${c.isHome ? 'vs' : '@'} ${esc(c.opp || '?')} · ${esc(form)}</div><div class="pick">${esc(pickText(c))}</div></div>
+      <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} strong signs">${stars(c)}</span></div>
+    </div>
+    <div class="tags">${kindTag(c)}${pills}</div>${std}
+    <div class="row"><button type="button" data-open="${esc(k)}">${open ? 'Hide stats' : 'Stats'}</button><button type="button" data-add="${esc(k)}" class="${chosen[k] ? 'on' : ''}">${chosen[k] ? 'Added' : '+ Add'}</button></div>
+    ${open ? detail(c, all) : ''}
+  </article>`;
+}
+function board() {
+  const seen = new Set(), all = [];
+  for (const p of S.props) {
+    const k = p.id + '|' + p.stat;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const c = candidate(p);
+    if (c) all.push(c);
+  }
+  return all.sort((a, b) => b.score - a.score);
+}
+function draw() {
+  const all = board();
+  window.__board = all;
+  const chosen = mine(), q = $('search').value.trim().toLowerCase(), game = $('game').value;
+  const kinds = {Standard: 'standard', 'Goblin-like': 'goblin', 'Demon-like': 'demon'};
+  let picks = all.filter(c => (!q || `${c.name} ${c.team || ''}`.toLowerCase().includes(q)) && (!game || c.matchup === game)
+    && (S.stat === 'all' || c.stat === S.stat) && (S.side === 'All' || c.side === S.side.toLowerCase())
+    && (S.kind === 'All lines' || c.kind === kinds[S.kind]));
+  if (S.sort === 'Most stars') picks = picks.map((c, i) => [c, i]).sort((a, b) => b[0].signs.length - a[0].signs.length || a[1] - b[1]).map(x => x[0]);
+  if ($('best').checked) { const once = new Set(); picks = picks.filter(c => !once.has(c.id) && once.add(c.id)); }
+  const total = picks.length;
+  $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${S.props.length ? 'No picks match these filters.' : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
+  $('count').textContent = total ? `${total} picks match` + (total > S.shown ? `, showing the top ${S.shown}` : '') : '';
+  $('more').hidden = total <= S.shown;
+  const mineList = all.filter(c => chosen[key(c)]);
+  $('mine').hidden = !mineList.length;
+  if (mineList.length) {
+    const together = mineList.reduce((x, c) => x * c.score, 1), avg = mean(mineList.map(c => c.score));
+    $('mine').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div><b>My picks (${mineList.length})</b><div class="sub">Average ${Math.round(avg * 100)}% · all ${mineList.length} hit: ${Math.round(together * 100)}%${mineList.length < 2 ? ' · PrizePicks needs at least 2' : ''}</div></div><button type="button" data-clear="1">Clear</button></div>
+      <ul>${mineList.map(c => `<li><span>${esc(c.name)}: <b>${esc(pickText(c))}</b> <span class="sub">${Math.round(c.score * 100)}%</span></span><button type="button" data-add="${esc(key(c))}">Remove</button></li>`).join('')}</ul>`;
+  }
+}
+function drawAll() {
+  const stats = ['all', ...new Set(S.props.map(p => p.stat))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : S.props.filter(p => p.stat === b).length - S.props.filter(p => p.stat === a).length);
+  chips($('stats'), stats, () => S.stat, v => { S.stat = v; }, v => v === 'all' ? 'All stats' : STAT_NAME[v]);
+  chips($('lineTypes'), ['Standard', 'Goblin-like', 'Demon-like', 'All lines'], () => S.kind, v => { S.kind = v; });
+  chips($('sides'), ['All', 'More', 'Less'], () => S.side, v => { S.side = v; });
+  chips($('sorts'), ['Most stars', 'Highest chance'], () => S.sort, v => { S.sort = v; });
+  const current = $('game').value;
+  const list = [...S.games].sort((a, b) => a.tip < b.tip ? -1 : 1);
+  $('game').innerHTML = '<option value="">All games</option>' + list.map(g => `<option ${g.matchup === current ? 'selected' : ''} value="${esc(g.matchup)}">${esc(g.matchup)}</option>`).join('');
+  $('games').innerHTML = list.map(g => {
+    const fav = g.spread == null ? '' : g.spread === 0 ? " · pick'em" : g.spread < 0 ? ` · ${g.home.code} ${g.spread}` : ` · ${g.away.code} -${g.spread}`;
+    const when = new Date(g.tip).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+    return `<div><b>${esc(g.matchup)}</b> ${esc(when)}${esc(fav)}${g.total ? ` · O/U ${g.total}` : ''}</div>`;
+  }).join('');
+  draw();
+}
+
+let pending = null;
+const soon = () => { if (!pending) pending = setTimeout(() => { pending = null; buildDefense(); draw(); }, 1200); };
+function progress(done, total) {
+  $('barWrap').hidden = done >= total;
+  $('bar').style.width = (total ? done / total * 100 : 0) + '%';
+  if (done < total) $('status').textContent = `Loading player stats ${done} of ${total}. Picks sharpen as they arrive.`;
+}
+let running = false;
+async function load() {
+  if (running) return;
+  running = true;
+  $('status').textContent = "Loading today's games…";
+  S.games = []; S.props = [];
+  try {
+    const score = await get(SITE + '/scoreboard');
+    const events = score.events || [];
+    S.seasonYear = (score.season || {}).year || new Date().getFullYear() + 1;
+    S.today = events.length ? et(events[0].date) : et(new Date().toISOString());
+    await Promise.all([loadInjuries().catch(() => {}), pool(events, 5, loadGame)]);
+    S.props.sort((a, b) => Math.abs(fairOver(b.over, b.under) - .5) - Math.abs(fairOver(a.over, a.under) - .5));
+    const people = [...new Map(S.props.map(p => [p.id, p.ref])).entries()];
+    let done = 0;
+    await pool(people, 12, async ([id, ref]) => { await loadAthlete(id, ref); done++; if (done % 15 === 0) { $('status').textContent = `Reading ${done} of ${people.length} players…`; soon(); } });
+    drawAll();
+    done = 0;
+    await pool(people.map(p => p[0]), 8, async id => { await loadLog(id); done++; progress(done, people.length); soon(); });
+    buildDefense();
+    drawAll();
+    progress(1, 1);
+    const started = (events.length - S.games.length);
+    $('status').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} · ${S.games.length} games to come${started ? `, ${started} already started or without lines` : ''}`;
+  } catch (e) {
+    $('status').textContent = "Couldn't reach ESPN. Check your connection and tap Refresh.";
+    window.__error = String(e);
+    drawAll();
+  } finally {
+    running = false;
+    window.__done = true;
+  }
+}
+$('refresh').onclick = load;
+$('search').oninput = () => { S.shown = 10; draw(); };
+$('game').onchange = () => { S.shown = 10; draw(); };
+$('best').onchange = () => { S.shown = 10; draw(); };
+$('more').onclick = () => { S.shown += 20; draw(); };
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.open) { S.open.has(b.dataset.open) ? S.open.delete(b.dataset.open) : S.open.add(b.dataset.open); draw(); }
+  if (b.dataset.add) { const m = mine(); m[b.dataset.add] ? delete m[b.dataset.add] : m[b.dataset.add] = 1; store.set(mineKey(), m); draw(); }
+  if (b.dataset.clear) { store.set(mineKey(), {}); draw(); }
+});
+document.addEventListener('error', e => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
+drawAll();
+load();
+</script>
+</body>
+</html>
