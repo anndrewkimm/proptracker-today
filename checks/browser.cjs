@@ -85,6 +85,16 @@ async function fixtureChecks(browser, url, device) {
 
   mode = 'healthy';
   await refresh(page);
+  await page.evaluate(() => {
+    const s=store.get(SNAPSHOT_KEY);
+    s.games.forEach(g => g.tip=new Date(Date.now()-1000).toISOString());
+    store.set(SNAPSHOT_KEY,s);
+  });
+  mode = 'outage';
+  await refresh(page);
+  assert.equal(await page.locator('article.card').count(), 0, 'Started games must disappear from saved data');
+  mode = 'healthy';
+  await refresh(page);
   // Exercise actual cached navigation, not just a mocked offline page.
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);

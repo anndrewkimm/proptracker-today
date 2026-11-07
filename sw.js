@@ -12,16 +12,16 @@ self.addEventListener('fetch', event => {
   if (event.request.mode !== 'navigate' || url.origin !== self.location.origin
       || ![new URL(HOME).pathname, new URL('index.html', HOME).pathname].includes(url.pathname)) return;
   event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
+    const cache = await caches.open(CACHE).catch(() => null);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(event.request, {signal: controller.signal});
       if (!response.ok || !(response.headers.get('content-type') || '').includes('text/html')) throw new Error('Page unavailable');
-      await cache.put(HOME, response.clone());
+      if (cache) await cache.put(HOME, response.clone()).catch(() => {});
       return response;
     } catch (error) {
-      const saved = await cache.match(HOME);
+      const saved = cache && await cache.match(HOME);
       if (saved) return saved;
       throw error;
     } finally { clearTimeout(timer); }
