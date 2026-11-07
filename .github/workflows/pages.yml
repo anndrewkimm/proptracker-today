@@ -1,0 +1,95 @@
+name: Phone site - deploy and health check
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Deploy current code, restore the last verified release, or check the live site'
+        type: choice
+        default: check-only
+        options: [check-only, deploy, restore-last-good]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phone-${{ github.event_name == 'schedule' && 'health' || 'release' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name != 'schedule' && inputs.mode != 'check-only'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.mode == 'restore-last-good' && 'last-good' || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Mobile browser and outage regression tests
+        run: node checks/browser.cjs
+      - name: Package only public app files
+        run: |
+          mkdir _site
+          cp index.html sw.js _site/
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+  live:
+    needs: [verify, deploy]
+    if: always() && (needs.deploy.result == 'success' || github.event_name == 'schedule' || inputs.mode == 'check-only')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Check the public page and real ESPN requests in mobile browsers
+        env:
+          SITE_URL: https://${{ github.repository_owner }}.github.io/proptracker-today/
+        run: node checks/browser.cjs --live "$SITE_URL"
+
+  remember-good:
+    needs: [deploy, live]
+    if: needs.live.result == 'success' && needs.deploy.result == 'success' && inputs.mode != 'restore-last-good'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Save the verified release for phone recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          if gh api "repos/$REPO/git/ref/tags/last-good" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$REPO/git/refs/tags/last-good" -f sha="$SHA" -F force=true
+          else
+            gh api --method POST "repos/$REPO/git/refs" -f ref=refs/tags/last-good -f sha="$SHA"
+          fi

@@ -80,6 +80,7 @@ summary { cursor: pointer; font-weight: 600 }
     <div><h1>Today</h1><div class="sub" id="status">Loading today's games…</div></div>
     <button id="refresh" type="button">Refresh</button>
   </header>
+  <div class="box" id="connection" role="status" hidden></div>
   <div class="bar" id="barWrap" hidden><i id="bar"></i></div>
   <div class="box mine" id="mine" hidden></div>
   <input id="search" type="search" placeholder="Player or team" aria-label="Search player or team" autocomplete="off">
@@ -106,6 +107,12 @@ summary { cursor: pointer; font-weight: 600 }
   <div class="sub" id="count"></div>
   <div id="list" style="display:grid;gap:10px"></div>
   <button id="more" type="button" hidden>Show 20 more</button>
+  <details class="box">
+    <summary>Connection help</summary>
+    <p class="sub">Refresh retries the data feeds. If a connection fails, a recent saved board can be shown with its age. Saved picks expire after 30 minutes; games disappear at tip-off.</p>
+    <p class="sub">Open this page once while connected so this phone can keep a copy for temporary outages. Offline access depends on your browser keeping its saved data.</p>
+    <p class="sub"><a href="https://github.com/anndrewkimm/proptracker-today/actions/workflows/pages.yml" target="_blank" rel="noopener">Check site status or recover from your phone</a>: sign in to GitHub, tap Run workflow, and choose check-only, deploy, or restore-last-good.</p>
+  </details>
 </main>
 <script>
 'use strict';
@@ -141,23 +148,32 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* full or blocked: just refetch next time */ } },
 };
 async function get(url) {
-  for (let i = 0; ; i++) {
+  if (navigator.onLine === false) throw new Error('Offline');
+  const primary = https(url);
+  const urls = primary.includes('site.web.api.espn.com/apis/site/')
+    ? [primary, primary.replace('site.web.api.espn.com', 'site.api.espn.com')] : [primary];
+  let lastError;
+  for (let i = 0; i < 2; i++) for (const address of urls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const r = await fetch(https(url));
+      const r = await fetch(address, {signal: controller.signal});
       if (r.status === 404) return null;
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
     } catch (e) {
-      if (i === 2) throw e;
-      await new Promise(ok => setTimeout(ok, 800 * (i + 1)));
-    }
+      lastError = e;
+    } finally { clearTimeout(timer); }
   }
+  throw lastError;
 }
 async function pool(items, size, work) {
   let next = 0;
+  const errors = [];
   await Promise.all(Array.from({length: Math.min(size, items.length)}, async () => {
-    while (next < items.length) await work(items[next++]).catch(() => {});
+    while (next < items.length) await work(items[next++]).catch(e => errors.push(String(e)));
   }));
+  return errors;
 }
 
 // --- the math, matching today.py -----------------------------------------------------------
@@ -200,6 +216,36 @@ const dayGap = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
 const S = {games: [], props: [], athletes: {}, logs: {}, injuries: {}, today: null, seasonYear: null, shown: 10, open: new Set(),
   stat: 'all', side: 'All', kind: 'Standard', sort: 'Most stars', defense: {}};
 window.__S = S;
+const SNAPSHOT_KEY = 'pt.board.v1', MAX_SNAPSHOT_AGE = 30 * 60 * 1000;
+let savedAt = null, connectionMessage = '';
+function connectionStatus() {
+  let message = connectionMessage;
+  if (savedAt) {
+    const minutes = Math.max(0, Math.floor((Date.now() - savedAt) / 60000));
+    message = Date.now() - savedAt > MAX_SNAPSHOT_AGE
+      ? 'Saved data is over 30 minutes old. Picks are hidden until a refresh succeeds.'
+      : `Using saved data from ${new Date(savedAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} (${minutes} min ago). Lines and injuries may have changed. Refresh and confirm the current line before using a pick.`;
+  }
+  $('connection').hidden = !message;
+  $('connection').textContent = message;
+}
+function saveBoard() {
+  store.set(SNAPSHOT_KEY, {time: Date.now(), today: S.today, seasonYear: S.seasonYear,
+    games: S.games, props: S.props, athletes: S.athletes, logs: S.logs, injuries: S.injuries});
+}
+function restoreBoard() {
+  const saved = store.get(SNAPSHOT_KEY);
+  if (!saved || saved.today !== et(new Date().toISOString()) || !Number.isFinite(saved.time)
+      || saved.time > Date.now() || !Array.isArray(saved.games) || !Array.isArray(saved.props)) return false;
+  S.today = saved.today; S.seasonYear = saved.seasonYear;
+  S.games = saved.games.filter(g => Date.parse(g.tip) > Date.now());
+  const ids = new Set(S.games.map(g => g.id));
+  S.props = saved.props.filter(p => p.game && ids.has(p.game.id));
+  S.athletes = saved.athletes || {}; S.logs = saved.logs || {}; S.injuries = saved.injuries || {};
+  savedAt = saved.time;
+  buildDefense();
+  return true;
+}
 
 function parseLog(json, current) {
   if (!json) return [];
@@ -225,9 +271,13 @@ function parseLog(json, current) {
 async function loadLog(id) {
   const key = 'pt.log.' + id, saved = store.get(key);
   if (saved && Date.now() - saved.t < LOG_HOURS * 36e5) { S.logs[id] = saved.g; return; }
-  let games = parseLog(await get(LOG + id + '/gamelog'), true);
+  const current = await get(LOG + id + '/gamelog');
+  if (!current || !Array.isArray(current.seasonTypes)) throw new Error('Player game log unavailable');
+  let games = parseLog(current, true);
   if (games.length < 25) {
-    const old = parseLog(await get(LOG + id + '/gamelog?season=' + (S.seasonYear - 1)), false);
+    const previous = await get(LOG + id + '/gamelog?season=' + (S.seasonYear - 1));
+    if (previous && !Array.isArray(previous.seasonTypes)) throw new Error('Previous game log format changed');
+    const old = parseLog(previous, false);
     games = games.concat(old).slice(0, 40);
   }
   S.logs[id] = games.filter(g => g.d < S.today);
@@ -237,13 +287,14 @@ async function loadAthlete(id, ref) {
   const key = 'pt.ath.' + id, saved = store.get(key);
   if (saved && Date.now() - saved.t < 7 * 864e5) { S.athletes[id] = saved; return; }
   const a = await get(ref);
-  if (!a) return;
+  if (!a || !a.displayName) throw new Error('Player details unavailable');
   const team = ((a.team || {}).$ref || '').match(/teams\/(\d+)/);
   S.athletes[id] = {t: Date.now(), name: a.displayName, team: team ? team[1] : null};
   store.set(key, S.athletes[id]);
 }
 async function loadInjuries() {
   const json = await get(SITE + '/injuries');
+  if (!json || !Array.isArray(json.injuries)) throw new Error('Injury feed unavailable');
   const out = {};
   for (const team of (json && json.injuries) || []) for (const i of team.injuries || []) {
     const a = i.athlete || {}, name = a.displayName;
@@ -260,6 +311,7 @@ async function loadGame(event) {
     sides[c.homeAway] = {id: c.team.id, code: NBA_CODE[code] || code};
   }
   const odds = await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
+  if (odds && !Array.isArray(odds.items)) throw new Error('Game odds format changed');
   const items = (odds && odds.items) || [];
   const dk = items.find(o => (o.provider || {}).name === 'Draft Kings');
   if (!dk) return;
@@ -268,6 +320,7 @@ async function loadGame(event) {
   S.games.push(game);
   if (!dk.propBets) return;
   const bets = await get(dk.propBets.$ref + '&limit=1000');
+  if (!bets || !Array.isArray(bets.items)) throw new Error('Player lines unavailable');
   const grouped = new Map();
   for (const item of (bets && bets.items) || []) {
     const stat = PROP_STATS[(item.type || {}).name];
@@ -503,8 +556,10 @@ function card(c, all, chosen) {
   </article>`;
 }
 function board() {
+  if (savedAt && Date.now() - savedAt > MAX_SNAPSHOT_AGE) return [];
   const seen = new Set(), all = [];
   for (const p of S.props) {
+    if (Date.parse(p.game.tip) <= Date.now()) continue;
     const k = p.id + '|' + p.stat;
     if (seen.has(k)) continue;
     seen.add(k);
@@ -514,6 +569,7 @@ function board() {
   return all.sort((a, b) => b.score - a.score);
 }
 function draw() {
+  connectionStatus();
   const all = board();
   window.__board = all;
   const chosen = mine(), q = $('search').value.trim().toLowerCase(), game = $('game').value;
@@ -560,34 +616,51 @@ function progress(done, total) {
   if (done < total) $('status').textContent = `Loading player stats ${done} of ${total}. Picks sharpen as they arrive.`;
 }
 let running = false;
+let lastAttempt = 0;
 async function load() {
   if (running) return;
   running = true;
+  lastAttempt = Date.now();
+  window.__done = false; window.__error = null; window.__health = {ok: false, errors: []};
+  savedAt = null; connectionMessage = '';
   $('status').textContent = "Loading today's games…";
   S.games = []; S.props = [];
+  S.injuries = {};
   try {
     const score = await get(SITE + '/scoreboard');
+    if (!score || !Array.isArray(score.events)) throw new Error('Scoreboard format changed');
     const events = score.events || [];
     S.seasonYear = (score.season || {}).year || new Date().getFullYear() + 1;
     S.today = events.length ? et(events[0].date) : et(new Date().toISOString());
-    await Promise.all([loadInjuries().catch(() => {}), pool(events, 5, loadGame)]);
+    const warnings = [];
+    const [, gameErrors] = await Promise.all([
+      loadInjuries().catch(e => warnings.push('Injuries: ' + e)), pool(events, 5, loadGame)]);
+    if (gameErrors.length) throw new Error('Some game lines failed to load: ' + gameErrors.join('; '));
     S.props.sort((a, b) => Math.abs(fairOver(b.over, b.under) - .5) - Math.abs(fairOver(a.over, a.under) - .5));
     const people = [...new Map(S.props.map(p => [p.id, p.ref])).entries()];
     let done = 0;
-    await pool(people, 12, async ([id, ref]) => { await loadAthlete(id, ref); done++; if (done % 15 === 0) { $('status').textContent = `Reading ${done} of ${people.length} players…`; soon(); } });
+    warnings.push(...await pool(people, 12, async ([id, ref]) => { await loadAthlete(id, ref); done++; if (done % 15 === 0) { $('status').textContent = `Reading ${done} of ${people.length} players…`; soon(); } }));
     drawAll();
     done = 0;
-    await pool(people.map(p => p[0]), 8, async id => { await loadLog(id); done++; progress(done, people.length); soon(); });
+    warnings.push(...await pool(people.map(p => p[0]), 8, async id => { await loadLog(id); done++; progress(done, people.length); soon(); }));
+    if (warnings.length) connectionMessage = 'Some injury or player data could not be refreshed. Analysis is incomplete; tap Refresh to retry.';
+    else saveBoard();
+    window.__health = {ok: warnings.length === 0, errors: warnings};
     buildDefense();
     drawAll();
     progress(1, 1);
     const started = (events.length - S.games.length);
     $('status').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} · ${S.games.length} games to come${started ? `, ${started} already started or without lines` : ''}`;
   } catch (e) {
-    $('status').textContent = "Couldn't reach ESPN. Check your connection and tap Refresh.";
+    const restored = restoreBoard();
+    connectionMessage = restored ? '' : 'Live data is unavailable and there is no saved board for today. Tap Refresh to retry.';
+    $('status').textContent = restored ? 'Live refresh failed · showing saved data' : "Couldn't refresh today's games.";
     window.__error = String(e);
+    window.__health = {ok: false, errors: [String(e)], saved: restored};
     drawAll();
   } finally {
+    progress(1, 1);
+    connectionStatus();
     running = false;
     window.__done = true;
   }
@@ -607,6 +680,15 @@ document.addEventListener('click', e => {
 document.addEventListener('error', e => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
 drawAll();
 load();
+setInterval(() => {
+  if (!running) draw();
+  if (!document.hidden && Date.now() - lastAttempt >= 5 * 60000) load();
+}, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - lastAttempt >= 5 * 60000) load();
+});
+window.addEventListener('online', load);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 </script>
 </body>
 </html>
