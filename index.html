@@ -276,7 +276,10 @@ async function loadLog(id) {
   let games = parseLog(current, true);
   if (games.length < 25) {
     const previous = await get(LOG + id + '/gamelog?season=' + (S.seasonYear - 1));
-    if (previous && !Array.isArray(previous.seasonTypes)) throw new Error('Previous game log format changed');
+    // A season he didn't play (a rookie, or out all year) comes back as just ESPN's filters, no seasonTypes.
+    const played = previous && previous.seasonTypes !== undefined;
+    if (played && !Array.isArray(previous.seasonTypes)) throw new Error('Previous game log format changed');
+    if (previous && !played && !Array.isArray(previous.filters)) throw new Error('Previous game log format changed');
     const old = parseLog(previous, false);
     games = games.concat(old).slice(0, 40);
   }

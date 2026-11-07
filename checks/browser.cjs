@@ -29,6 +29,8 @@ function fixture(url) {
     current:{target:{value:20.5}}, odds:{american:{value:String(price)}}}))};
   if (url.endsWith('/odds')) return {items:[{provider:{name:'Draft Kings'}, spread:-2, overUnder:220,
     propBets:{$ref:`${base}/events/123/propBets?lang=en`}}]};
+  // No games last season (a rookie): ESPN sends only its filters.
+  if (url.includes('/gamelog?season=')) return {filters:[{name:'league', value:'nba', options:[]}]};
   if (url.includes('/gamelog')) return {labels:[], seasonTypes:[]};
   if (url.includes('/athletes/')) return {displayName:'Test Player', team:{$ref:`${base}/teams/1`}};
   throw new Error('Unexpected API request: '+url);
