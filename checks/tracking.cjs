@@ -23,6 +23,25 @@ test('one player, standard lines only, ties stable',()=>{
   const s=observe(empty(),{...input,picks:[p,{...p,stat:'rebounds'},{...p,id:'2',kind:'goblin'}]},now);
   assert.equal(s.days[input.day].picks.length,1);
 });
+test('empty candidates never lock and later recovery can lock before tip-off',()=>{
+  const s=observe(empty(),{...input,picks:[]},now);
+  assert.equal(s.days[input.day],undefined);
+  observe(s,input,'2026-11-11T23:30:00Z');
+  assert.equal(s.days[input.day].status,'locked');
+});
+test('a missed day cannot be replaced and an unknown archive version fails',()=>{
+  const s=observe(empty(),input,tip);
+  observe(s,input,now);
+  assert.equal(s.days[input.day].status,'missed');
+  assert.throws(()=>observe({version:2},input,now),/Unsupported archive/);
+});
+test('identical observations deduplicate, price-only changes remain visible',()=>{
+  const s=observe(empty(),input,now);
+  observe(s,input,'2026-11-11T23:10:00Z');
+  assert.equal(s.movement['12|1|points'].length,1);
+  observe(s,{...input,picks:[{...p,over:105}]},'2026-11-11T23:20:00Z');
+  assert.equal(s.movement['12|1|points'].length,2);
+});
 function summary(stats,completed=true){return {header:{competitions:[{status:{type:{completed}}}]},boxscore:{players:[{statistics:[{labels:['PTS','REB','AST','3PT'],athletes:[{athlete:{id:'1'},stats}]}]}]}};}
 test('grade final exact event box, combo stats and pushes; missing data remains pending',()=>{
   assert.equal(grade(p,summary(['20','5','3','2-5'])).result,'hit');

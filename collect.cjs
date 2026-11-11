@@ -44,6 +44,11 @@ async function json(url) {
           matchup:c.matchup,formHits:c.formHits,formGames:c.formGames};
       })}));
     if (!input.day || !Array.isArray(input.events)) throw Error('No valid slate');
+    const imminent=input.events.some(e=>Date.parse(e.tip)>Date.now() && Date.parse(e.tip)-Date.now()<=90*60000);
+    if (imminent && !input.picks.length) {
+      input.ok=false;
+      console.warn('Upcoming games but no eligible lines returned. Will retry on the next scheduled run; no selections locked.');
+    }
     console.log(JSON.stringify({day:input.day,events:input.events.length,picks:input.picks.length,ok:input.ok}));
     if (!input.picks.length) console.log(JSON.stringify(await Promise.all(diagnostics)));
     if (!input.events.length) {
