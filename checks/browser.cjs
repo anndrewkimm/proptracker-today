@@ -54,7 +54,7 @@ async function fixtureChecks(browser, url, device) {
   await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({json:{
     version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
     days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
-      {rank:1,name:'Test Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19}]}},
+      {rank:1,name:'Archived Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19}]}},
     movement:{test:[{name:'Test Player',stat:'points',line:20.5,over:-110,under:-110,at:'2026-11-05T21:00:00Z'},
       {name:'Test Player',stat:'points',line:21.5,over:-115,under:-105,at:'2026-11-05T22:00:00Z'}]}
   }}));
@@ -77,6 +77,9 @@ async function fixtureChecks(browser, url, device) {
   await page.locator('#ask-question').fill('How have the top 5 performed?');
   await page.locator('#ask-form button').click();
   assert.match(await page.locator('#ask-answer').innerText(), /Quick facts.*[\s\S]*1\/1/);
+  await page.locator('#ask-question').fill('How did Archived Player do?');
+  await page.locator('#ask-form button').click();
+  assert.match(await page.locator('#ask-answer').innerText(), /Result: hit; actual 19/);
   await page.getByText('Optional on-device AI',{exact:true}).click();
   await page.evaluate(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));
   await page.locator('#load-ai').click();

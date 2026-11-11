@@ -69,11 +69,17 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   function evidence(question) {
     const q=question.toLowerCase(), match=q.match(/top\s*(\d+)/), x=match?Math.max(1,Math.min(20,Number(match[1]))):Number(el('record-x').value);
     const current=window.__health?.ok?board():[];
-    const named=current.filter(p=>p.name.toLowerCase().split(' ').some(w=>w.length>2 && q.includes(w)));
+    const mentions=name=>name.toLowerCase().split(' ').some(w=>w.length>2 && q.includes(w));
+    const named=current.filter(p=>mentions(p.name));
+    const history=Object.entries(archive?.days||{}).sort(([a],[b])=>b.localeCompare(a))
+      .flatMap(([date,d])=>d.picks.map(p=>({...p,date}))).filter(p=>mentions(p.name));
     const facts=[recordText(x)];
     for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''}`);
+    for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off.`);
     if (/line|mov|chang/.test(q)) {
-      const changes=Object.values(archive?.movement||{}).filter(h=>h.length>1 && (!named.length || named.some(c=>c.name===h[0].name))).slice(-8);
+      const histories=Object.values(archive?.movement||{}).filter(h=>h.length>1);
+      const matching=histories.filter(h=>mentions(h[0].name));
+      const changes=(matching.length?matching:histories).slice(-8);
       facts.push(changes.length?changes.map(h=>`${h[0].name} ${h[0].stat}: ${h[0].line} at ${h[0].at} → ${h.at(-1).line} at ${h.at(-1).at}.`).join('\n'):'No matching observed line changes in the archive.');
     }
     facts.push(`Archive timestamp: ${archive?.updatedAt||'unavailable'}. Live board: ${window.__health?.ok?'loaded':'unavailable or incomplete'}. No personal slips, verified PrizePicks lines, or profit data are available here.`);
