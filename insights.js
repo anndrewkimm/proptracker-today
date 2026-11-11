@@ -3,15 +3,16 @@
 if (!new URLSearchParams(location.search).has('collector')) (() => {
   const archiveURL='https://raw.githubusercontent.com/anndrewkimm/proptracker-today/tracker-data/archive.json';
   let archive=null, engine=null;
-  const panel=document.createElement('section'); panel.className='box';
-  panel.innerHTML=`<h2>Daily record & questions</h2>
+  const panel=document.createElement('details'); panel.className='box';
+  panel.innerHTML=`<summary>Daily record, lines & chat</summary>
     <p class="sub">Shared automatic picks, even when your PC and both phones are off. DraftKings lines via ESPN; these are not verified PrizePicks offers.</p>
     <p id="archive-status" class="sub">Loading shared record…</p>
-    <label>Top <select id="record-x" aria-label="Number of daily picks">${[1,3,5,10,15,20].map(x=>`<option ${x===5?'selected':''}>${x}</option>`).join('')}</select> picks per day</label>
-    <label>Period <select id="record-period"><option value="all">All recorded days</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0"><label>Daily top X <select id="record-x" aria-label="Number of daily picks">${[1,3,5,10,15,20].map(x=>`<option ${x===5?'selected':''}>${x}</option>`).join('')}</select></label>
+    <label>Period <select id="record-period"><option value="all">All recorded days</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label></div>
     <div id="record-summary"></div>
     <details><summary>Daily selections and results</summary><div id="record-days"></div></details>
     <details><summary>Observed line changes</summary><p class="sub">Last 30 days. Times are observations, not exact change times. Prices can change without the line moving.</p><div id="line-history"></div></details>
+    <details><summary>How daily tracking works</summary><p class="sub">Selections lock once, on the first complete collection in the 90 minutes before the day's first tip-off. Standard lines, most stars then chance, one pick per player, up to 20. All days use this fixed policy. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented.</p></details>
     <details><summary>Ask about picks</summary>
       <p class="sub">Quick answers work without an AI download. Ask about a player, line movement, or the track record.</p>
       <form id="ask-form"><input id="ask-question" aria-label="Question about picks" placeholder="How have the top 5 performed?" maxlength="600" required><button type="submit">Ask</button></form>
@@ -45,13 +46,20 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   }
   async function refreshArchive() {
     try {
-      const r=await fetch(archiveURL+'?v='+Math.floor(Date.now()/300000),{signal:AbortSignal.timeout(15000)});
+      // Pin a commit when available: raw branch URLs can serve an older CDN copy.
+      // Public API quota exhaustion falls back to the timestamp-labeled raw branch.
+      let url=archiveURL+'?v='+Math.floor(Date.now()/300000);
+      try {
+        const ref=await fetch('https://api.github.com/repos/anndrewkimm/proptracker-today/git/ref/heads/tracker-data',{cache:'no-cache',signal:AbortSignal.timeout(5000)});
+        if(ref.ok) {const sha=(await ref.json()).object?.sha; if(/^[a-f0-9]{40}$/.test(sha)) url=archiveURL.replace('/tracker-data/','/'+sha+'/');}
+      } catch { /* raw branch remains available without the API */ }
+      const r=await fetch(url,{signal:AbortSignal.timeout(15000)});
       if (!r.ok) throw Error('Archive not published yet');
       const data=await r.json();
       if (data.version!==1 || !data.days || !data.movement) throw Error('Archive format unavailable');
       archive=data; store.set('pt.public.archive.v1',data);
       const age=Math.max(0,Math.floor((Date.now()-Date.parse(data.updatedAt))/60000));
-      el('archive-status').textContent=`Shared archive updated ${new Date(data.updatedAt).toLocaleString()} (${age} min ago). ${age>90?'Collection is delayed. ':''}${data.collectionOk===false?'Latest board was incomplete; no new selections locked. ':''}Selections lock once, on the first complete collection in the 90 minutes before the slate’s first tip-off. Standard lines, most stars then chance, one pick per player, up to 20. All days use this fixed policy.`;
+      el('archive-status').textContent=`Shared archive updated ${new Date(data.updatedAt).toLocaleString()} (${age} min ago). ${age>90?'Collection is delayed. ':''}${data.collectionOk===false?'Latest board was incomplete; no new selections locked. ':''}`;
     } catch {
       archive=store.get('pt.public.archive.v1');
       el('archive-status').textContent=archive?`Offline/shared archive unavailable. Showing saved history from ${new Date(archive.updatedAt).toLocaleString()}; this is not a live quote.`:'Shared archive is not available yet. The live board still works. Automatic collection needs a successful GitHub workflow run.';

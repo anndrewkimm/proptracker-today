@@ -49,6 +49,7 @@ async function fixtureChecks(browser, url, device) {
   page.on('pageerror', e => errors.push(e.message));
   await page.clock.install({time:fixedTime});
   let mode = 'healthy', fallbacks = 0;
+  await context.route('https://api.github.com/**',route=>route.fulfill({json:{object:{sha:'a'.repeat(40)}}}));
   await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({json:{
     version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
     days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
@@ -68,6 +69,7 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true);
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  await page.getByText('Daily record, lines & chat',{exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('record-summary')?.textContent.includes('1/1'));
   assert.match(await page.locator('#record-summary').innerText(), /market baseline 52.0%/);
   await page.getByText('Ask about picks',{exact:true}).click();
