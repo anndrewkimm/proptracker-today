@@ -119,6 +119,7 @@ summary { cursor: pointer; font-weight: 600 }
 // The web API host allows browser requests; the site.api host can reject them with 403.
 const SITE = 'https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba';
 const CORE = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba';
+const isDraftKings = odds => String(odds?.provider?.name || '').replace(/\s/g, '').toLowerCase() === 'draftkings';
 const LOG = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/';
 const NBA_CODE = {GS: 'GSW', NY: 'NYK', NO: 'NOP', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS'};
 const PROP_STATS = {'Total Points': 'points', 'Total Rebounds': 'rebounds', 'Total Assists': 'assists',
@@ -316,7 +317,7 @@ async function loadGame(event) {
   const odds = await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
   if (odds && !Array.isArray(odds.items)) throw new Error('Game odds format changed');
   const items = (odds && odds.items) || [];
-  const dk = items.find(o => (o.provider || {}).name === 'Draft Kings');
+  const dk = items.find(isDraftKings);
   if (!dk) return;
   const game = {id: event.id, home: sides.home, away: sides.away, matchup: `${sides.away.code} @ ${sides.home.code}`,
     spread: dk.spread ?? null, total: dk.overUnder ?? null, tip: event.date};

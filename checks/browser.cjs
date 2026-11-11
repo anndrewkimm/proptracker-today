@@ -17,6 +17,7 @@ const event = {id:'123', date:'2026-11-06T23:00:00Z', competitions:[{
 const finishedEvent = {...event, id:'99', competitions:[{...event.competitions[0], status:{type:{state:'post'}}}]};
 const tomorrowEvent = {...event, date:'2026-11-07T23:00:00Z'};
 let slate = 'today';
+let providerName = 'Draft Kings';
 function fixture(url) {
   if (url.includes('/scoreboard')) {
     if (url.includes('dates=20261106')) return {leagues:[{season:{year:2027}}], events:[slate === 'today' ? event : finishedEvent]};
@@ -27,7 +28,7 @@ function fixture(url) {
   if (url.includes('/propBets')) return {items:[-110,-110].map(price => ({
     type:{name:'Total Points'}, athlete:{$ref:athlete},
     current:{target:{value:20.5}}, odds:{american:{value:String(price)}}}))};
-  if (url.endsWith('/odds')) return {items:[{provider:{name:'Draft Kings'}, spread:-2, overUnder:220,
+  if (url.endsWith('/odds')) return {items:[{provider:{name:providerName}, spread:-2, overUnder:220,
     propBets:{$ref:`${base}/events/123/propBets?lang=en`}}]};
   // No games last season (a rookie): ESPN sends only its filters.
   if (url.includes('/gamelog?season=')) return {filters:[{name:'league', value:'nba', options:[]}]};
@@ -95,6 +96,10 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('.detail').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
+  providerName='DraftKings';
+  await refresh(page);
+  assert.equal(await page.locator('article.card').count(),1,'Cloud ESPN uses DraftKings without a space');
+  providerName='Draft Kings';
 
   slate = 'tomorrow';
   await refresh(page);
@@ -176,7 +181,7 @@ async function liveChecks(browser, url) {
       let lined = false;  // a game still to come that has DraftKings player lines on ESPN
       for (const e of score.events.filter(e => e.competitions[0].status.type.state==='pre')) {
         const odds=await get(`${CORE}/events/${e.id}/competitions/${e.id}/odds`);
-        const dk=odds?.items?.find(o => o.provider?.name==='Draft Kings');
+        const dk=odds?.items?.find(isDraftKings);
         if (dk?.propBets && (await get(dk.propBets.$ref+'&limit=5'))?.items?.length) { lined = true; break; }
       }
       if (lined && !S.props.length) throw new Error('ESPN has player lines for '+S.today+' but the page shows none');
@@ -186,7 +191,7 @@ async function liveChecks(browser, url) {
       if (event) {
         const odds=await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
         if (odds && !Array.isArray(odds.items)) throw new Error('Odds format changed');
-        const dk=odds?.items?.find(o => o.provider?.name==='Draft Kings');
+        const dk=odds?.items?.find(isDraftKings);
         if (dk?.propBets) {
           const props=await get(dk.propBets.$ref+'&limit=1000');
           if (!props || !Array.isArray(props.items)) throw new Error('Props unavailable');
