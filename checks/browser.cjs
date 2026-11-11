@@ -49,6 +49,13 @@ async function fixtureChecks(browser, url, device) {
   page.on('pageerror', e => errors.push(e.message));
   await page.clock.install({time:fixedTime});
   let mode = 'healthy', fallbacks = 0;
+  await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({json:{
+    version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
+    days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
+      {rank:1,name:'Test Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19}]}},
+    movement:{test:[{name:'Test Player',stat:'points',line:20.5,over:-110,under:-110,at:'2026-11-05T21:00:00Z'},
+      {name:'Test Player',stat:'points',line:21.5,over:-115,under:-105,at:'2026-11-05T22:00:00Z'}]}
+  }}));
   await context.route(/espn\.com/, async route => {
     const requestUrl = route.request().url();
     if (requestUrl.includes('a.espncdn')) return route.fulfill({status:404});
@@ -61,6 +68,17 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true);
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  await page.waitForFunction(()=>document.getElementById('record-summary')?.textContent.includes('1/1'));
+  assert.match(await page.locator('#record-summary').innerText(), /market baseline 52.0%/);
+  await page.getByText('Ask about picks',{exact:true}).click();
+  await page.locator('#ask-question').fill('How have the top 5 performed?');
+  await page.locator('#ask-form button').click();
+  assert.match(await page.locator('#ask-answer').innerText(), /Quick facts.*[\s\S]*1\/1/);
+  await page.getByText('Optional on-device AI',{exact:true}).click();
+  await page.evaluate(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));
+  await page.locator('#load-ai').click();
+  assert.match(await page.locator('#ai-status').innerText(), /does not support WebGPU/);
+  await page.getByText('Ask about picks',{exact:true}).click();
   const rotation = await page.evaluate(() => rotationEvidence({log:[
     {d:'2026-11-04', m:28, cur:true}, {d:'2026-11-03', m:36, cur:true},
     {d:S.today, m:99, cur:true}, {d:'2025-12-01', m:99, cur:false}
@@ -186,7 +204,8 @@ async function liveChecks(browser, url) {
     if (process.argv[2] === '--live') await liveChecks(browser, process.argv[3]);
     else {
       server = http.createServer((req,res) => {
-        const file = new URL(req.url,'http://localhost').pathname === '/sw.js' ? 'sw.js' : 'index.html';
+        const pathname = new URL(req.url,'http://localhost').pathname;
+        const file = pathname === '/sw.js' ? 'sw.js' : pathname === '/insights.js' ? 'insights.js' : 'index.html';
         res.writeHead(200, {'Content-Type':file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'});
         res.end(fs.readFileSync(path.join(root,file)));
       });

@@ -1,0 +1,63 @@
+name: Record daily picks and lines
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [collect.cjs, tracking.cjs, index.html, .github/workflows/collect.yml]
+permissions:
+  contents: write
+concurrency:
+  group: shared-tracking
+  cancel-in-progress: false
+jobs:
+  collect:
+    # Standard public-repository runners are free. Refuse a private-repo copy.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Read durable public archive
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin tracker-data; then
+            git fetch origin tracker-data
+            git show FETCH_HEAD:archive.json > archive.json
+          else
+            code=$?
+            if [ "$code" != 2 ]; then exit "$code"; fi
+          fi
+      - run: node --test checks/tracking.cjs
+      - run: node collect.cjs archive.json
+      - name: Save public recommendations, never personal slips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir archive-commit
+          cp archive.json archive-commit/
+          cd archive-commit
+          git init -b tracker-data
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin tracker-data; then
+            git fetch origin tracker-data
+            git reset --soft FETCH_HEAD
+          else
+            code=$?
+            if [ "$code" != 2 ]; then exit "$code"; fi
+          fi
+          git add archive.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update observed lines and daily record'
+            git push origin HEAD:tracker-data
+          fi

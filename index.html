@@ -660,11 +660,12 @@ async function load() {
     };
     const pre = s => s.events.some(e => ((e.competitions[0] || {}).status || {}).type?.state === 'pre');
     let day = et(new Date().toISOString()), score = await dated(day);
-    if (!pre(score)) {
+    if (!pre(score) && !new URLSearchParams(location.search).has('collector')) {
       const next = et(new Date(Date.now() + 864e5).toISOString()), later = await dated(next);
       if (pre(later)) { day = next; score = later; }
     }
     const events = score.events;
+    window.__slate = events.map(e => ({id:e.id, tip:e.date}));
     S.seasonYear = (score.season || ((score.leagues || [])[0] || {}).season || {}).year || new Date().getFullYear() + 1;
     S.today = day;
     const warnings = [];
@@ -725,5 +726,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', load);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 </script>
+<script src="./insights.js"></script>
 </body>
 </html>

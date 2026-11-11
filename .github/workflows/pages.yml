@@ -36,10 +36,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Mobile browser and outage regression tests
         run: node checks/browser.cjs
+      - name: Frozen recommendations and grading tests
+        run: node --test checks/tracking.cjs
       - name: Package only public app files
         run: |
           mkdir _site
-          cp index.html sw.js _site/
+          cp index.html sw.js insights.js _site/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
