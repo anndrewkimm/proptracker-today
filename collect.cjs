@@ -34,6 +34,15 @@ async function json(url) {
           matchup:c.matchup,formHits:c.formHits,formGames:c.formGames};
       })}));
     if (!input.day || !Array.isArray(input.events)) throw Error('No valid slate');
+    console.log(JSON.stringify({day:input.day,events:input.events.length,picks:input.picks.length,ok:input.ok}));
+    if (!input.events.length) {
+      for (const host of ['site.web.api.espn.com','site.api.espn.com']) {
+        try {
+          const probe=await json(`https://${host}/apis/site/v2/sports/basketball/nba/scoreboard?dates=${input.day.replaceAll('-','')}`);
+          console.log(JSON.stringify({host,events:probe.events?.length,day:probe.day,leagues:probe.leagues?.map(l=>l.season?.year)}));
+        } catch(e) {console.log(host+': '+e.message);}
+      }
+    }
     observe(state,input,new Date().toISOString());
     const summaries=new Map();
     for (const day of Object.values(state.days)) for (const p of day.picks) {
@@ -47,6 +56,7 @@ async function json(url) {
       if (result) Object.assign(p,result,{gradedAt:new Date().toISOString()});
     }
     state.collectionOk=input.ok;
+    state.slate={day:input.day,events:input.events.length,picks:input.picks.length};
     fs.mkdirSync(path.dirname(path.resolve(output)),{recursive:true});
     fs.writeFileSync(output+'.tmp',JSON.stringify(state));
     fs.renameSync(output+'.tmp',output);
