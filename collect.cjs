@@ -24,6 +24,16 @@ async function json(url) {
   const browser=await chromium.launch({headless:true});
   try {
     const page=await browser.newPage();
+    const diagnostics=[];
+    page.on('response',response=>{
+      if (/espn\.com.*(scoreboard|\/odds(?:\?|$))/.test(response.url())) diagnostics.push((async()=>{
+        try {
+          const data=await response.json();
+          return {url:response.url(),status:response.status(),events:data.events?.map(e=>({id:e.id,tip:e.date,state:e.competitions?.[0]?.status?.type?.state})),
+            providers:data.items?.map(i=>({name:i.provider?.name,props:!!i.propBets,ref:i.$ref}))};
+        } catch {return {url:response.url(),status:response.status()};}
+      })());
+    });
     await page.goto(`http://127.0.0.1:${server.address().port}/?collector=1`);
     await page.waitForFunction(()=>window.__done===true,null,{timeout:240000});
     const input=await page.evaluate(()=>({ok:window.__health.ok, day:S.today, events:window.__slate||[],
@@ -35,6 +45,7 @@ async function json(url) {
       })}));
     if (!input.day || !Array.isArray(input.events)) throw Error('No valid slate');
     console.log(JSON.stringify({day:input.day,events:input.events.length,picks:input.picks.length,ok:input.ok}));
+    if (!input.picks.length) console.log(JSON.stringify(await Promise.all(diagnostics)));
     if (!input.events.length) {
       for (const host of ['site.web.api.espn.com','site.api.espn.com']) {
         try {
