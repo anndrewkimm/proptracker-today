@@ -93,6 +93,7 @@ summary { cursor: pointer; font-weight: 600 }
       <div class="chips" id="sorts" role="group" aria-label="Sort"></div>
       <select id="game" aria-label="Game"></select>
       <label><input id="best" type="checkbox" checked style="width:auto;min-height:0"> Best pick per player</label>
+      <label><input id="moved" type="checkbox" style="width:auto;min-height:0"> Only moved lines</label>
       <div class="sub" id="games"></div>
     </div>
   </details>
@@ -602,10 +603,12 @@ function draw() {
   let picks = all.filter(c => (!q || `${c.name} ${c.team || ''}`.toLowerCase().includes(q)) && (!game || c.matchup === game)
     && (S.stat === 'all' || c.stat === S.stat) && (S.side === 'All' || c.side === S.side.toLowerCase())
     && (S.kind === 'All lines' || c.kind === kinds[S.kind]));
+  const movedOnly = $('moved').checked;  // before best-per-player and the top-N cut
+  if (movedOnly) picks = picks.filter(c => window.lineMoved?.(c));
   if (S.sort === 'Most stars') picks = picks.map((c, i) => [c, i]).sort((a, b) => b[0].signs.length - a[0].signs.length || a[1] - b[1]).map(x => x[0]);
   if ($('best').checked) { const once = new Set(); picks = picks.filter(c => !once.has(c.id) && once.add(c.id)); }
   const total = picks.length;
-  $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${S.props.length ? 'No picks match these filters.' : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
+  $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${S.props.length ? (movedOnly ? 'No lines have moved among the picks matching these filters. A line counts once it differs from the first one observed.' : 'No picks match these filters.') : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
   $('count').textContent = total ? `${total} picks match` + (total > S.shown ? `, showing the top ${S.shown}` : '') : '';
   $('more').hidden = total <= S.shown;
   const mineList = all.filter(c => chosen[key(c)]);
@@ -707,6 +710,7 @@ $('refresh').onclick = load;
 $('search').oninput = () => { S.shown = 10; draw(); };
 $('game').onchange = () => { S.shown = 10; draw(); };
 $('best').onchange = () => { S.shown = 10; draw(); };
+$('moved').onchange = () => { S.shown = 10; draw(); };
 $('more').onclick = () => { S.shown += 20; draw(); };
 document.addEventListener('click', e => {
   const b = e.target.closest('button');

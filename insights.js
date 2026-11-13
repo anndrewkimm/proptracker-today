@@ -45,6 +45,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     <details style="margin-top:20px"><summary>How daily tracking works</summary><p class="sub">Standard DraftKings lines, most stars then chance, one pick per player, up to 20. Selections lock on the first complete collection in the 90 minutes before the first tip-off. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented. These are not verified PrizePicks offers or profit results.</p></details></div>
     <div id="moves-view" hidden><h2 class="tracking-title">Follow the line</h2><p class="sub">See what changed before you pick. First observed → latest observed.</p>
     <div class="record-controls"><label>Player<input id="move-search" type="search" placeholder="Find a player"></label><label>Period<select id="move-period"><option value="today">Today's board</option><option value="all">Last 30 days</option></select></label></div>
+    <label class="sub"><input id="move-returned" type="checkbox" style="width:auto;min-height:0"> Include lines that moved and came back</label>
     <div id="line-history" class="movement-grid"></div></div>
     <div id="ask-view" hidden><h2 class="tracking-title">Ask your tracker</h2><p class="sub">Quick answers from your saved results and observed lines.</p>
     <div class="question-chips"><button data-question="How have the top 5 performed?">Top 5 results</button><button data-question="Which lines changed?">What moved?</button></div>
@@ -56,6 +57,10 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   const photo=(name,id)=>`<div class="photo">${esc(name.split(' ').slice(0,2).map(w=>w[0]).join(''))}${id?`<img alt="" loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${esc(id)}.png">`:''}</div>`;
   const time=at=>new Date(at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   const changes=h=>h.filter((p,i)=>!i||p.line!==h[i-1].line);
+  // A current move: the latest observed line differs from the first. Unchanged lines, price-only updates
+  // and lines that moved and came back are not (their observations stay stored).
+  const netMove=h=>h.length>1&&h.at(-1).line!==h[0].line;
+  const moveText=(h,unit)=>{const d=h.at(-1).line-h[0].line;return `${d>0?'↑':'↓'} ${h[0].line} → ${h.at(-1).line} · ${d>0?'+':'−'}${Math.abs(d)}${unit?' '+unit.toLowerCase():''}`;};
   let local=store.get('pt.line.observations.v1')||{};
   function histories(){
     const merged={};
@@ -78,10 +83,13 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     return `<p>${esc(easier)}</p><p><b>Why it moved</b><br>ESPN reports the numbers, not the cause. Injury news or changed betting demand could contribute; neither is confirmed here.${c?.injury?` Current status: ${esc(c.injury)}. This does not establish the cause.`:''}</p>`;
   }
   function timeline(h,c){return `${spark(changes(h))}<div class="timeline">${h.map(p=>`<div><b>${p.line}</b> <span class="sub">${esc(time(p.at))} · Over ${p.over??'—'} / Under ${p.under??'—'}</span></div>`).join('')}</div>${explanation(h,c)}<p class="sub">Observed times, not exact change times. DraftKings via ESPN; PrizePicks can differ.</p>`;}
+  let merged=null;  // rebuilt whenever the archive or local observations change
+  const allHistories=()=>merged||=histories();
+  const historyFor=c=>{const p=S.props.find(p=>p.id===c.id&&p.stat===c.stat);return p?allHistories()[`${p.game.id}|${c.id}|${c.stat}`]||[]:[];};
+  window.lineMoved=c=>netMove(historyFor(c));
   window.lineMovementHTML=c=>{
-    const p=S.props.find(p=>p.id===c.id&&p.stat===c.stat);if(!p)return '';
-    const h=histories()[`${p.game.id}|${c.id}|${c.stat}`]||[], moved=changes(h);if(moved.length<2)return '';
-    return `<details class="movement-strip"><summary>DK line moved ${moved[0].line} → ${moved.at(-1).line}</summary>${timeline(h,c)}</details>`;
+    const h=historyFor(c);if(!netMove(h))return '';
+    return `<details class="movement-strip"><summary>DK line ${esc(moveText(h,STAT_NAME[c.stat]))}</summary>${timeline(h,c)}</details>`;
   };
   window.captureLineObservations=()=>{
     if(!window.__health?.ok)return;
@@ -93,7 +101,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
       if(!last||last.line!==p.line||last.over!==p.over||last.under!==p.under)h.push({at:now,line:p.line,over:p.over,under:p.under,name:c.name,stat:p.stat,tip:p.game.tip});
     }
     for(const [key,h] of Object.entries(local))if(Date.parse(h.at(-1)?.tip)<Date.now()-30*864e5)delete local[key];
-    store.set('pt.line.observations.v1',local);renderMoves();
+    store.set('pt.line.observations.v1',local);merged=null;renderMoves();
   };
   function selectedDays() {
     const period=el('record-period').value;
@@ -114,11 +122,12 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   }
   function renderMoves(){
     const q=el('move-search').value.toLowerCase(), todayOnly=el('move-period').value==='today';
-    const moved=Object.entries(histories()).filter(([,h])=>changes(h).length>1&&h[0].name.toLowerCase().includes(q)&&(!todayOnly||(h.at(-1).tip&&et(h.at(-1).tip)===S.today))).sort(([,a],[,b])=>Date.parse(b.at(-1).at)-Date.parse(a.at(-1).at));
+    const back=el('move-returned').checked;
+    const moved=Object.entries(allHistories()).filter(([,h])=>(netMove(h)||(back&&changes(h).length>1))&&h[0].name.toLowerCase().includes(q)&&(!todayOnly||(h.at(-1).tip&&et(h.at(-1).tip)===S.today))).sort(([,a],[,b])=>Date.parse(b.at(-1).at)-Date.parse(a.at(-1).at));
     el('line-history').innerHTML=moved.map(([key,h])=>{
       const first=h[0],last=h.at(-1),delta=last.line-first.line;
-      return `<article class="move-card"><div class="result-head">${photo(first.name,key.split('|')[1])}<div><b>${esc(first.name)}</b><div class="sub">${esc(STAT_NAME[first.stat])} · DraftKings</div></div></div><div class="move-number">${first.line} → ${last.line} <small>${delta>0?'↑ +':delta<0?'↓ ':''}${delta}</small></div><div class="sub">${esc(time(first.at))} → ${esc(time(last.at))}</div>${spark(changes(h))}<details><summary>Timeline & why</summary>${timeline(h)}</details></article>`;
-    }).join('')||'<div class="empty">No observed line changes in this view yet. Each complete pre-game refresh adds observations. Try Last 30 days for older moves.</div>';
+      return `<article class="move-card"><div class="result-head">${photo(first.name,key.split('|')[1])}<div><b>${esc(first.name)}</b><div class="sub">${esc(STAT_NAME[first.stat])} · DraftKings</div></div></div><div class="move-number">${first.line} → ${last.line} <small>${delta>0?'↑ +':delta<0?'↓ −':'back to the first line'}${delta?Math.abs(delta):''}</small></div><div class="sub">${esc(time(first.at))} → ${esc(time(last.at))}</div>${spark(changes(h))}<details><summary>Timeline & why</summary>${timeline(h)}</details></article>`;
+    }).join('')||'<div class="empty">No lines sit away from where they were first observed in this view. Unchanged lines, price-only updates and lines that came back are left out. Try Last 30 days for older moves.</div>';
   }
   function render(){
     el('record-summary').textContent=recordText();
@@ -136,7 +145,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     render();
   }
   nav.onclick=e=>{const b=e.target.closest('[data-view]');if(b)selectView(Number(b.dataset.view));};
-  el('record-day').onchange=renderDays;el('move-search').oninput=renderMoves;el('move-period').onchange=renderMoves;
+  el('record-day').onchange=renderDays;el('move-search').oninput=renderMoves;el('move-period').onchange=renderMoves;el('move-returned').onchange=renderMoves;
   panel.querySelectorAll('[data-question]').forEach(b=>b.onclick=()=>{el('ask-question').value=b.dataset.question;el('ask-form').requestSubmit();});
   async function refreshArchive() {
     try {
@@ -151,11 +160,11 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
       if (!r.ok) throw Error('Archive not published yet');
       const data=await r.json();
       if (data.version!==1 || !data.days || !data.movement) throw Error('Archive format unavailable');
-      archive=data; store.set('pt.public.archive.v1',data);
+      archive=data; merged=null; store.set('pt.public.archive.v1',data);
       const age=Math.max(0,Math.floor((Date.now()-Date.parse(data.updatedAt))/60000));
       el('archive-status').textContent=`Shared archive updated ${new Date(data.updatedAt).toLocaleString()} (${age} min ago). ${age>90?'Collection is delayed. ':''}${data.collectionOk===false?'Latest board was incomplete; no new selections locked. ':''}`;
     } catch {
-      archive=store.get('pt.public.archive.v1');
+      archive=store.get('pt.public.archive.v1'); merged=null;
       el('archive-status').textContent=archive?`Offline/shared archive unavailable. Showing saved history from ${new Date(archive.updatedAt).toLocaleString()}; this is not a live quote.`:'Shared archive is not available yet. The live board still works. Automatic collection needs a successful GitHub workflow run.';
     }
     render(); draw();
@@ -171,7 +180,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''}`);
     for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off.`);
     if (/line|mov|chang/.test(q)) {
-      const observed=Object.values(histories()).filter(h=>changes(h).length>1);
+      const observed=Object.values(allHistories()).filter(netMove);
       const matching=observed.filter(h=>mentions(h[0].name));
       const moved=(matching.length?matching:observed).slice(-8);
       facts.push(moved.length?moved.map(h=>`${h[0].name} ${h[0].stat}: ${h[0].line} at ${h[0].at} → ${h.at(-1).line} at ${h.at(-1).at}.`).join('\n'):'No matching observed line changes in the archive.');

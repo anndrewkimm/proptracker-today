@@ -93,7 +93,11 @@ async function fixtureChecks(browser, url, device) {
   await page.getByRole('button',{name:'Today picks',exact:true}).click();
   propLine=18.5;
   await refresh(page);
-  assert.match(await page.locator('article.card .movement-strip summary').innerText(),/20.5 → 18.5/);
+  assert.match(await page.locator('article.card .movement-strip summary').innerText(),/↓ 20.5 → 18.5 · −2 points/);
+  const onlyMoved = on => page.evaluate(v => { const b=$('moved'); b.checked=v; b.onchange(); }, on);
+  await onlyMoved(true);
+  assert.equal(await page.locator('article.card').count(),1,'Only moved lines keeps a net mover');
+  await onlyMoved(false);
   await page.locator('article.card .movement-strip summary').click();
   assert.match(await page.locator('article.card .movement-strip').innerText(),/not the cause/);
   await page.getByRole('button',{name:'Line moves',exact:true}).click();
@@ -102,8 +106,19 @@ async function fixtureChecks(browser, url, device) {
   await page.screenshot({path:path.join(root,'../.phone-tools/movement-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   propLine=20.5;
   await refresh(page);
-  assert.match(await page.locator('.move-number').innerText(),/20.5 → 20.5/,'A return to the original line still has movement history');
+  assert.equal(await page.locator('.move-card').count(),0,'A line back at its first number is not a current move');
+  assert.match(await page.locator('#line-history').innerText(),/came back/);
+  await page.locator('#move-returned').check();
+  assert.match(await page.locator('.move-number').innerText(),/20.5 → 20.5/,'History of a returned line stays reachable');
+  await page.locator('#move-returned').uncheck();
+  assert.equal(await page.evaluate(()=>Object.values(store.get('pt.line.observations.v1')).find(h=>h[0].name==='Test Player'&&h[0].tip).length),3,'Observations stay stored');
   await page.getByRole('button',{name:'Today picks',exact:true}).click();
+  assert.equal(await page.locator('article.card .movement-strip').count(),0,'No badge once the line is back');
+  await onlyMoved(true);
+  assert.equal(await page.locator('article.card').count(),0);
+  assert.match(await page.locator('#list').innerText(),/No lines have moved/);
+  await onlyMoved(false);
+  assert.equal(await page.locator('article.card').count(),1);
   const rotation = await page.evaluate(() => rotationEvidence({log:[
     {d:'2026-11-04', m:28, cur:true}, {d:'2026-11-03', m:36, cur:true},
     {d:S.today, m:99, cur:true}, {d:'2025-12-01', m:99, cur:false}
