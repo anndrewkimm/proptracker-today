@@ -575,7 +575,7 @@ function card(c, all, chosen) {
       <div class="who"><strong>${esc(c.name)}</strong><div class="sub">${esc(c.team || '?')} ${c.isHome ? 'vs' : '@'} ${esc(c.opp || '?')} · ${esc(form)}</div><div class="pick">${esc(pickText(c))}</div></div>
       <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} strong signs">${stars(c)}</span></div>
     </div>
-    <div class="tags">${kindTag(c)}${pills}</div>${std}
+    <div class="tags">${kindTag(c)}${pills}</div>${std}${window.lineMovementHTML?.(c)||''}
     <div class="row"><button type="button" data-open="${esc(k)}">${open ? 'Hide stats' : 'Stats'}</button><button type="button" data-add="${esc(k)}" class="${chosen[k] ? 'on' : ''}">${chosen[k] ? 'Added' : '+ Add'}</button></div>
     ${open ? detail(c, all) : ''}
   </article>`;
@@ -613,7 +613,7 @@ function draw() {
   if (mineList.length) {
     const together = mineList.reduce((x, c) => x * c.score, 1), avg = mean(mineList.map(c => c.score));
     $('mine').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div><b>My picks (${mineList.length})</b><div class="sub">Average ${Math.round(avg * 100)}% · all ${mineList.length} hit: ${Math.round(together * 100)}%${mineList.length < 2 ? ' · PrizePicks needs at least 2' : ''}</div></div><button type="button" data-clear="1">Clear</button></div>
-      <ul>${mineList.map(c => `<li><span>${esc(c.name)}: <b>${esc(pickText(c))}</b> <span class="sub">${Math.round(c.score * 100)}%</span></span><button type="button" data-add="${esc(key(c))}">Remove</button></li>`).join('')}</ul>`;
+      <ul>${mineList.map(c => `<li><span>${esc(c.name)}: <b>${esc(pickText(c))}</b> <span class="sub">${Math.round(c.score * 100)}%</span>${window.lineMovementHTML?.(c)||''}</span><button type="button" data-add="${esc(key(c))}">Remove</button></li>`).join('')}</ul>`;
   }
 }
 function drawAll() {
@@ -683,6 +683,7 @@ async function load() {
     if (warnings.length) connectionMessage = 'Some injury or player data could not be refreshed. Analysis is incomplete; tap Refresh to retry.';
     else saveBoard();
     window.__health = {ok: warnings.length === 0, errors: warnings};
+    window.captureLineObservations?.();
     buildDefense();
     drawAll();
     progress(1, 1);

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {chromium, devices} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '..');
+fs.mkdirSync(path.join(root,'../.phone-tools'),{recursive:true});
 const fixedTime = new Date('2026-11-06T18:00:00Z');
 const base = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba';
 const athlete = `${base}/athletes/1966`;
@@ -18,6 +19,7 @@ const finishedEvent = {...event, id:'99', competitions:[{...event.competitions[0
 const tomorrowEvent = {...event, date:'2026-11-07T23:00:00Z'};
 let slate = 'today';
 let providerName = 'Draft Kings';
+let propLine = 20.5;
 function fixture(url) {
   if (url.includes('/scoreboard')) {
     if (url.includes('dates=20261106')) return {leagues:[{season:{year:2027}}], events:[slate === 'today' ? event : finishedEvent]};
@@ -27,7 +29,7 @@ function fixture(url) {
   if (url.includes('/injuries')) return {injuries:[]};
   if (url.includes('/propBets')) return {items:[-110,-110].map(price => ({
     type:{name:'Total Points'}, athlete:{$ref:athlete},
-    current:{target:{value:20.5}}, odds:{american:{value:String(price)}}}))};
+    current:{target:{value:propLine}}, odds:{american:{value:String(price)}}}))};
   if (url.endsWith('/odds')) return {items:[{provider:{name:providerName}, spread:-2, overUnder:220,
     propBets:{$ref:`${base}/events/123/propBets?lang=en`}}]};
   // No games last season (a rookie): ESPN sends only its filters.
@@ -54,7 +56,7 @@ async function fixtureChecks(browser, url, device) {
   await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({json:{
     version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
     days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
-      {rank:1,name:'Archived Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19}]}},
+      {rank:1,id:'1966',name:'Archived Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19,signs:['Less']}]}},
     movement:{test:[{name:'Test Player',stat:'points',line:20.5,over:-110,under:-110,at:'2026-11-05T21:00:00Z'},
       {name:'Test Player',stat:'points',line:21.5,over:-115,under:-105,at:'2026-11-05T22:00:00Z'}]}
   }}));
@@ -70,10 +72,14 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true);
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
-  await page.getByText('Daily record, lines & chat',{exact:true}).click();
+  await page.getByRole('button',{name:'Daily record',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('record-summary')?.textContent.includes('1/1'));
-  assert.match(await page.locator('#record-summary').innerText(), /market baseline 52.0%/);
-  await page.getByText('Ask about picks',{exact:true}).click();
+  assert.match(await page.locator('#record-summary').textContent(), /market baseline 52.0%/);
+  assert.equal(await page.locator('.result-card').count(),1);
+  assert.equal(await page.locator('.result-card .photo').count(),1,'Portrait falls back to initials if image is unavailable');
+  assert.equal(await page.locator('#list').isVisible(),false);
+  await page.screenshot({path:path.join(root,'../.phone-tools/record-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  await page.getByRole('button',{name:'Ask',exact:true}).first().click();
   await page.locator('#ask-question').fill('How have the top 5 performed?');
   await page.locator('#ask-form button').click();
   assert.match(await page.locator('#ask-answer').innerText(), /Quick facts.*[\s\S]*1\/1/);
@@ -84,7 +90,20 @@ async function fixtureChecks(browser, url, device) {
   await page.evaluate(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));
   await page.locator('#load-ai').click();
   assert.match(await page.locator('#ai-status').innerText(), /does not support WebGPU/);
-  await page.getByText('Ask about picks',{exact:true}).click();
+  await page.getByRole('button',{name:'Today picks',exact:true}).click();
+  propLine=18.5;
+  await refresh(page);
+  assert.match(await page.locator('article.card .movement-strip summary').innerText(),/20.5 → 18.5/);
+  await page.locator('article.card .movement-strip summary').click();
+  assert.match(await page.locator('article.card .movement-strip').innerText(),/not the cause/);
+  await page.getByRole('button',{name:'Line moves',exact:true}).click();
+  assert.equal(await page.locator('.move-card').count(),1);
+  assert.match(await page.locator('.move-number').innerText(),/20.5 → 18.5/);
+  await page.screenshot({path:path.join(root,'../.phone-tools/movement-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  propLine=20.5;
+  await refresh(page);
+  assert.match(await page.locator('.move-number').innerText(),/20.5 → 20.5/,'A return to the original line still has movement history');
+  await page.getByRole('button',{name:'Today picks',exact:true}).click();
   const rotation = await page.evaluate(() => rotationEvidence({log:[
     {d:'2026-11-04', m:28, cur:true}, {d:'2026-11-03', m:36, cur:true},
     {d:S.today, m:99, cur:true}, {d:'2025-12-01', m:99, cur:false}

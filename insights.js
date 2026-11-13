@@ -1,49 +1,143 @@
-'use strict';
-// No keys, remote inference, or paid services. The optional model runs on this device.
+ 'use strict';
 if (!new URLSearchParams(location.search).has('collector')) (() => {
   const archiveURL='https://raw.githubusercontent.com/anndrewkimm/proptracker-today/tracker-data/archive.json';
-  let archive=null, engine=null;
-  const panel=document.createElement('details'); panel.className='box';
-  panel.innerHTML=`<summary>Daily record, lines & chat</summary>
-    <p class="sub">Shared automatic picks, even when your PC and both phones are off. DraftKings lines via ESPN; these are not verified PrizePicks offers.</p>
-    <p id="archive-status" class="sub">Loading shared record…</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0"><label>Daily top X <select id="record-x" aria-label="Number of daily picks">${[1,3,5,10,15,20].map(x=>`<option ${x===5?'selected':''}>${x}</option>`).join('')}</select></label>
-    <label>Period <select id="record-period"><option value="all">All recorded days</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label></div>
-    <div id="record-summary"></div>
-    <details><summary>Daily selections and results</summary><div id="record-days"></div></details>
-    <details><summary>Observed line changes</summary><p class="sub">Last 30 days. Times are observations, not exact change times. Prices can change without the line moving.</p><div id="line-history"></div></details>
-    <details><summary>How daily tracking works</summary><p class="sub">Selections lock once, on the first complete collection in the 90 minutes before the day's first tip-off. Standard lines, most stars then chance, one pick per player, up to 20. All days use this fixed policy. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented.</p></details>
-    <details><summary>Ask about picks</summary>
-      <p class="sub">Quick answers work without an AI download. Ask about a player, line movement, or the track record.</p>
-      <form id="ask-form"><input id="ask-question" aria-label="Question about picks" placeholder="How have the top 5 performed?" maxlength="600" required><button type="submit">Ask</button></form>
-      <p id="ask-answer" style="white-space:pre-wrap;overflow-wrap:anywhere" role="status"></p>
-      <details><summary>Optional on-device AI</summary><p class="sub">Download a small language model to this device. This can use hundreds of MB, take several minutes, and use battery. Requires WebGPU and sufficient memory. No account, API key, or paid fallback. AI explanations can be wrong; the record above is authoritative.</p>
-      <button id="load-ai" type="button">Download & enable local AI</button> <button id="stop-ai" type="button" hidden>Turn AI off</button><p id="ai-status" class="sub"></p></details>
-    </details>`;
-  document.querySelector('main').insertBefore(panel,document.getElementById('count'));
+  let archive=store.get('pt.public.archive.v1'), engine=null;
+  const style=document.createElement('style'); style.textContent=`
+    .tracking-nav{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:12px 0 18px}
+    .tracking-nav button{padding:10px 5px;font-size:13px}.tracking-nav .on{background:var(--accent);color:white}
+    .tracking-title{font-size:24px;letter-spacing:-.6px;margin:8px 0}.record-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+    .record-controls label{font-size:12px;color:var(--muted)}.record-controls select{margin-top:5px}
+    .record-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
+    .record-metric{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+    .record-metric b{display:block;font-size:28px;letter-spacing:-1px}.record-metric span{font-size:12px;color:var(--muted)}
+    .record-grid,.movement-grid{display:grid;gap:12px;margin-top:14px}.result-card,.move-card{border:1px solid var(--line);border-radius:18px;padding:16px;background:var(--panel)}
+    .result-head{display:flex;align-items:center;gap:12px}.result-head .photo{width:50px;height:50px;flex-shrink:0}
+    .result-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px}
+    .result-badge{border-radius:9px;padding:5px 10px;background:var(--soft);font-weight:650;font-size:13px}
+    .result-badge.hit{color:var(--good);background:var(--good-soft)}.result-badge.miss{color:var(--bad);background:var(--bad-soft)}
+    .movement-strip{padding:10px 12px;background:var(--accent-soft);border-radius:12px;margin:10px 0;font-size:13px;color:var(--accent)}
+    .movement-strip summary{font-weight:650}.movement-strip p{color:var(--fg);line-height:1.5}
+    .move-number{font-size:29px;letter-spacing:-1px;font-weight:700;margin:12px 0 4px}.move-number small{font-size:13px;letter-spacing:0;color:var(--accent)}
+    .spark{width:100%;height:76px;display:block;margin:10px 0;color:var(--accent)}
+    .timeline{border-left:2px solid var(--accent-soft);padding-left:12px;display:grid;gap:10px;margin:12px 0;font-size:12px}
+    .timeline b{font-size:15px}.record-stars{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.record-stars div{border-radius:12px;background:var(--soft);padding:10px}
+    .question-chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}#ask-answer{background:var(--soft);border-radius:16px;padding:16px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+    #ask-answer:empty{display:none}#ask-form{display:flex;gap:8px}#ask-question{min-width:0}
+    @media(min-width:760px){.record-grid,.movement-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.record-metrics{grid-template-columns:repeat(4,1fr)}}
+  `;document.head.append(style);
+  const main=document.querySelector('main');
+  const boardArea=document.createElement('div');boardArea.id='board-area';
+  const start=document.getElementById('mine'), end=document.getElementById('more');
+  main.insertBefore(boardArea,start);
+  let item=start;
+  while(item){const next=item.nextSibling;boardArea.append(item);if(item===end)break;item=next;}
+  const nav=document.createElement('nav'); nav.className='tracking-nav';nav.setAttribute('aria-label','Today views');
+  nav.innerHTML=['Today picks','Daily record','Line moves','Ask'].map((v,i)=>`<button type="button" data-view="${i}" aria-pressed="${i===0}" class="${i===0?'on':''}">${v}</button>`).join('');
+  main.insertBefore(nav,boardArea);
+  const panel=document.createElement('section');panel.hidden=true;main.insertBefore(panel,boardArea);
+  panel.innerHTML=`<p id="archive-status" class="sub" role="status">Loading shared record…</p>
+    <div id="daily-view"><h2 class="tracking-title">Your daily shortlist, graded</h2><p class="sub">The same saved picks on your phone and desktop.</p>
+    <div class="record-controls"><label>Daily top X<select id="record-x" aria-label="Number of daily picks">${[1,3,5,10,15,20].map(x=>`<option ${x===5?'selected':''}>${x}</option>`).join('')}</select></label>
+    <label>Period<select id="record-period"><option value="all">All recorded days</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label></div>
+    <div id="record-metrics" class="record-metrics"></div><div id="record-stars" class="record-stars"></div>
+    <details><summary>Accuracy details</summary><p id="record-summary" class="sub"></p></details>
+    <label class="sub" for="record-day">Game day</label><select id="record-day"></select><div id="record-days"></div>
+    <details style="margin-top:20px"><summary>How daily tracking works</summary><p class="sub">Standard DraftKings lines, most stars then chance, one pick per player, up to 20. Selections lock on the first complete collection in the 90 minutes before the first tip-off. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented. These are not verified PrizePicks offers or profit results.</p></details></div>
+    <div id="moves-view" hidden><h2 class="tracking-title">Follow the line</h2><p class="sub">See what changed before you pick. First observed → latest observed.</p>
+    <div class="record-controls"><label>Player<input id="move-search" type="search" placeholder="Find a player"></label><label>Period<select id="move-period"><option value="today">Today's board</option><option value="all">Last 30 days</option></select></label></div>
+    <div id="line-history" class="movement-grid"></div></div>
+    <div id="ask-view" hidden><h2 class="tracking-title">Ask your tracker</h2><p class="sub">Quick answers from your saved results and observed lines.</p>
+    <div class="question-chips"><button data-question="How have the top 5 performed?">Top 5 results</button><button data-question="Which lines changed?">What moved?</button></div>
+    <form id="ask-form"><input id="ask-question" aria-label="Question about picks" placeholder="Ask about a player or a line…" maxlength="600" required><button type="submit">Ask</button></form>
+    <p id="ask-answer" role="status"></p>
+    <details style="margin-top:24px"><summary>Optional on-device AI</summary><p class="sub">Optional download; quick answers above need no model. Requires WebGPU and potentially hundreds of MB. AI can be wrong; saved facts remain authoritative.</p>
+    <button id="load-ai" type="button">Download & enable local AI</button> <button id="stop-ai" type="button" hidden>Turn AI off</button><p id="ai-status" class="sub"></p></details></div>`;
   const el=id=>document.getElementById(id), percent=v=>`${(v*100).toFixed(1)}%`;
+  const photo=(name,id)=>`<div class="photo">${esc(name.split(' ').slice(0,2).map(w=>w[0]).join(''))}${id?`<img alt="" loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${esc(id)}.png">`:''}</div>`;
+  const time=at=>new Date(at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const changes=h=>h.filter((p,i)=>!i||p.line!==h[i-1].line);
+  let local=store.get('pt.line.observations.v1')||{};
+  function histories(){
+    const merged={};
+    for(const source of [archive?.movement||{},local]) for(const [k,h] of Object.entries(source)) (merged[k]||=[]).push(...h);
+    for(const [k,h] of Object.entries(merged)){
+      const ordered=h.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)), clean=[];
+      for(const p of ordered){const last=clean.at(-1);if(!last||p.line!==last.line||p.over!==last.over||p.under!==last.under)clean.push(p);}
+      merged[k]=clean;
+    }
+    return merged;
+  }
+  function spark(h){
+    const values=h.map(p=>p.line), low=Math.min(...values)-.5, span=Math.max(...values)-low+.5;
+    const points=values.map((v,i)=>`${8+i*284/Math.max(1,values.length-1)},${64-(v-low)/span*52}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 300 76" role="img" aria-label="Line history ${esc(values.join(' to '))}"><path d="M8 66H292" stroke="currentColor" opacity=".15"/><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>`;
+  }
+  function explanation(h,c){
+    const delta=h.at(-1).line-h[0].line;
+    const easier=c&&delta?`The latest line is ${(delta<0)===(c.side==='more')?'easier':'harder'} to clear for ${c.side==='more'?'More':'Less'} than the first observed line. Your placed slip keeps its original line.`:'';
+    return `<p>${esc(easier)}</p><p><b>Why it moved</b><br>ESPN reports the numbers, not the cause. Injury news or changed betting demand could contribute; neither is confirmed here.${c?.injury?` Current status: ${esc(c.injury)}. This does not establish the cause.`:''}</p>`;
+  }
+  function timeline(h,c){return `${spark(changes(h))}<div class="timeline">${h.map(p=>`<div><b>${p.line}</b> <span class="sub">${esc(time(p.at))} · Over ${p.over??'—'} / Under ${p.under??'—'}</span></div>`).join('')}</div>${explanation(h,c)}<p class="sub">Observed times, not exact change times. DraftKings via ESPN; PrizePicks can differ.</p>`;}
+  window.lineMovementHTML=c=>{
+    const p=S.props.find(p=>p.id===c.id&&p.stat===c.stat);if(!p)return '';
+    const h=histories()[`${p.game.id}|${c.id}|${c.stat}`]||[], moved=changes(h);if(moved.length<2)return '';
+    return `<details class="movement-strip"><summary>DK line moved ${moved[0].line} → ${moved.at(-1).line}</summary>${timeline(h,c)}</details>`;
+  };
+  window.captureLineObservations=()=>{
+    if(!window.__health?.ok)return;
+    const now=new Date().toISOString();
+    for(const p of S.props){
+      if(Date.parse(p.game.tip)<=Date.now()||!Number.isFinite(p.line))continue;
+      const c=candidate(p);if(!c)continue;
+      const key=`${p.game.id}|${p.id}|${p.stat}`, h=local[key]||=[], last=h.at(-1);
+      if(!last||last.line!==p.line||last.over!==p.over||last.under!==p.under)h.push({at:now,line:p.line,over:p.over,under:p.under,name:c.name,stat:p.stat,tip:p.game.tip});
+    }
+    for(const [key,h] of Object.entries(local))if(Date.parse(h.at(-1)?.tip)<Date.now()-30*864e5)delete local[key];
+    store.set('pt.line.observations.v1',local);renderMoves();
+  };
   function selectedDays() {
     const period=el('record-period').value;
     const cutoff=period==='all'?'':et(new Date(Date.now()-(Number(period)-1)*864e5).toISOString());
     return Object.entries(archive?.days||{}).filter(([day])=>day>=cutoff).sort(([a],[b])=>b.localeCompare(a));
   }
-  function rows(x=Number(el('record-x').value)) {return selectedDays().flatMap(([,d])=>d.picks.slice(0,x));}
+  function rows(x=Number(el('record-x').value)){return selectedDays().flatMap(([,d])=>d.picks.slice(0,x));}
   function recordText(x=Number(el('record-x').value)) {
     const picks=rows(x), decided=picks.filter(p=>['hit','miss'].includes(p.result)), hits=decided.filter(p=>p.result==='hit').length;
-    if (!decided.length) return `Top ${x}: no decided results yet. ${picks.length} recorded picks; ${picks.filter(p=>!p.result).length} pending.`;
-    const n=decided.length, rate=hits/n, z=1.96, center=(rate+z*z/(2*n))/(1+z*z/n), half=z*Math.sqrt(rate*(1-rate)/n+z*z/(4*n*n))/(1+z*z/n);
-    const expected=mean(decided.map(p=>p.score)), market=mean(decided.map(p=>p.market));
-    return `Top ${x}: ${hits}/${n} hit (${percent(rate)}). Average predicted chance ${percent(expected)}; market baseline ${percent(market)}. Approximate 95% interval ${percent(center-half)}–${percent(center+half)} (picks can be correlated). ${picks.filter(p=>!p.result).length} pending, ${picks.filter(p=>p.result==='push').length} pushes, ${picks.filter(p=>p.result==='dnp').length} DNPs. Hit rate does not measure payout or profit.`;
+    if(!decided.length)return `Top ${x}: no decided results yet. ${picks.length} recorded picks; ${picks.filter(p=>!p.result).length} pending.`;
+    const n=decided.length,rate=hits/n,z=1.96,center=(rate+z*z/(2*n))/(1+z*z/n),half=z*Math.sqrt(rate*(1-rate)/n+z*z/(4*n*n))/(1+z*z/n);
+    return `Top ${x}: ${hits}/${n} hit (${percent(rate)}). Average predicted chance ${percent(mean(decided.map(p=>p.score)))}; market baseline ${percent(mean(decided.map(p=>p.market)))}. Approximate 95% interval ${percent(center-half)}–${percent(center+half)} (picks can be correlated). ${picks.filter(p=>!p.result).length} pending, ${picks.filter(p=>p.result==='push').length} pushes, ${picks.filter(p=>p.result==='dnp').length} DNPs. Hit rate does not measure payout or profit.`;
   }
-  function render() {
+  function renderDays(){
+    const date=el('record-day').value,d=archive?.days?.[date],x=Number(el('record-x').value);
+    el('record-days').innerHTML=!d?'<div class="empty">No selections recorded in this period yet. Past picks are never invented.</div>':d.status==='missed'?`<div class="empty">Missed collection · ${esc(d.reason||'No complete board before tip-off')}</div>`:
+      `<p class="sub">Locked ${esc(time(d.at))} · ${esc(d.source)}</p><div class="record-grid">${d.picks.slice(0,x).map(p=>`<article class="result-card"><div class="result-head">${photo(p.name,p.id)}<div><b>#${p.rank} ${esc(p.name)}</b><div class="sub">${esc(p.matchup||'')}</div><div>${esc(p.side==='more'?'More':'Less')} <b>${p.line}</b> ${esc(STAT_NAME[p.stat])}</div></div></div><div class="result-bottom"><span class="result-badge ${esc(p.result||'')}">${esc(p.result==='hit'?'✓ Hit':p.result==='miss'?'✕ Miss':p.result||'Pending')}${p.actual!=null?` · ${p.actual}`:''}</span><span class="sub">${percent(p.score)} predicted <span class="stars">${'★'.repeat(p.signs?.length||0)}</span></span></div></article>`).join('')}</div>`;
+  }
+  function renderMoves(){
+    const q=el('move-search').value.toLowerCase(), todayOnly=el('move-period').value==='today';
+    const moved=Object.entries(histories()).filter(([,h])=>changes(h).length>1&&h[0].name.toLowerCase().includes(q)&&(!todayOnly||(h.at(-1).tip&&et(h.at(-1).tip)===S.today))).sort(([,a],[,b])=>Date.parse(b.at(-1).at)-Date.parse(a.at(-1).at));
+    el('line-history').innerHTML=moved.map(([key,h])=>{
+      const first=h[0],last=h.at(-1),delta=last.line-first.line;
+      return `<article class="move-card"><div class="result-head">${photo(first.name,key.split('|')[1])}<div><b>${esc(first.name)}</b><div class="sub">${esc(STAT_NAME[first.stat])} · DraftKings</div></div></div><div class="move-number">${first.line} → ${last.line} <small>${delta>0?'↑ +':delta<0?'↓ ':''}${delta}</small></div><div class="sub">${esc(time(first.at))} → ${esc(time(last.at))}</div>${spark(changes(h))}<details><summary>Timeline & why</summary>${timeline(h)}</details></article>`;
+    }).join('')||'<div class="empty">No observed line changes in this view yet. Each complete pre-game refresh adds observations. Try Last 30 days for older moves.</div>';
+  }
+  function render(){
     el('record-summary').textContent=recordText();
-    const x=Number(el('record-x').value);
-    el('record-days').innerHTML=selectedDays().map(([date,d])=>`<details><summary>${esc(date)} · ${d.status==='missed'?'Missed collection':`${d.picks.slice(0,x).length} picks`}</summary>
-      <p class="sub">${d.at?`Locked ${esc(new Date(d.at).toLocaleString())} · ${esc(d.model)} · ${esc(d.source)}`:esc(d.reason)}</p>
-      ${d.picks.slice(0,x).map(p=>`<p>#${p.rank} ${esc(p.name)} · ${esc(p.side)} ${p.line} ${esc(STAT_NAME[p.stat])} · ${percent(p.score)} → <b>${esc(p.result||'pending')}</b>${p.actual!=null?` (${p.actual})`:''}</p>`).join('')}</details>`).join('')||'<p class="sub">Recording starts with the next eligible slate. Past selections are not invented.</p>';
-    const moved=Object.values(archive?.movement||{}).filter(h=>h.length>1).sort((a,b)=>b.at(-1).at.localeCompare(a.at(-1).at));
-    el('line-history').innerHTML=moved.slice(0,100).map(h=>`<details><summary>${esc(h[0].name)} · ${esc(STAT_NAME[h[0].stat])} · ${h[0].line} → ${h.at(-1).line}</summary>${h.map(p=>`<div class="sub">${esc(new Date(p.at).toLocaleString())}: ${p.line} · Over ${p.over}, Under ${p.under}</div>`).join('')}</details>`).join('')||'<p class="sub">No observed changes yet. A first observation alone cannot show movement.</p>';
+    const picks=rows(),decided=picks.filter(p=>['hit','miss'].includes(p.result)),hits=decided.filter(p=>p.result==='hit').length,n=decided.length;
+    el('record-metrics').innerHTML=[[n?percent(hits/n):'—',`${hits}/${n} decided · actual hit rate`],[n?percent(mean(decided.map(p=>p.score))):'—','Predicted chance'],[n?percent(mean(decided.map(p=>p.market))):'—','Market baseline'],[picks.filter(p=>!p.result).length,'Pending results']].map(([v,l])=>`<div class="record-metric"><b>${v}</b><span>${l}</span></div>`).join('');
+    el('record-stars').innerHTML=[2,1,0].map(s=>{const g=decided.filter(p=>p.signs?.length===s);return g.length?`<div><span class="stars">${'★'.repeat(s)||'0 stars'}</span> <b>${percent(g.filter(p=>p.result==='hit').length/g.length)}</b><div class="sub">${g.length} decided picks</div></div>`:'';}).join('');
+    const selected=el('record-day').value;
+    el('record-day').innerHTML=selectedDays().map(([day,d])=>`<option value="${esc(day)}" ${selected===day?'selected':''}>${esc(day)}${d.status==='missed'?' · missed':''}</option>`).join('');
+    renderDays();renderMoves();
   }
+  function selectView(index){
+    boardArea.hidden=index!==0;panel.hidden=index===0;
+    el('daily-view').hidden=index!==1;el('moves-view').hidden=index!==2;el('ask-view').hidden=index!==3;
+    nav.querySelectorAll('button').forEach((b,i)=>{b.classList.toggle('on',i===index);b.setAttribute('aria-pressed',i===index);});
+    render();
+  }
+  nav.onclick=e=>{const b=e.target.closest('[data-view]');if(b)selectView(Number(b.dataset.view));};
+  el('record-day').onchange=renderDays;el('move-search').oninput=renderMoves;el('move-period').onchange=renderMoves;
+  panel.querySelectorAll('[data-question]').forEach(b=>b.onclick=()=>{el('ask-question').value=b.dataset.question;el('ask-form').requestSubmit();});
   async function refreshArchive() {
     try {
       // Pin a commit when available: raw branch URLs can serve an older CDN copy.
@@ -64,7 +158,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
       archive=store.get('pt.public.archive.v1');
       el('archive-status').textContent=archive?`Offline/shared archive unavailable. Showing saved history from ${new Date(archive.updatedAt).toLocaleString()}; this is not a live quote.`:'Shared archive is not available yet. The live board still works. Automatic collection needs a successful GitHub workflow run.';
     }
-    render();
+    render(); draw();
   }
   function evidence(question) {
     const q=question.toLowerCase(), match=q.match(/top\s*(\d+)/), x=match?Math.max(1,Math.min(20,Number(match[1]))):Number(el('record-x').value);
@@ -77,10 +171,10 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''}`);
     for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off.`);
     if (/line|mov|chang/.test(q)) {
-      const histories=Object.values(archive?.movement||{}).filter(h=>h.length>1);
-      const matching=histories.filter(h=>mentions(h[0].name));
-      const changes=(matching.length?matching:histories).slice(-8);
-      facts.push(changes.length?changes.map(h=>`${h[0].name} ${h[0].stat}: ${h[0].line} at ${h[0].at} → ${h.at(-1).line} at ${h.at(-1).at}.`).join('\n'):'No matching observed line changes in the archive.');
+      const observed=Object.values(histories()).filter(h=>changes(h).length>1);
+      const matching=observed.filter(h=>mentions(h[0].name));
+      const moved=(matching.length?matching:observed).slice(-8);
+      facts.push(moved.length?moved.map(h=>`${h[0].name} ${h[0].stat}: ${h[0].line} at ${h[0].at} → ${h.at(-1).line} at ${h.at(-1).at}.`).join('\n'):'No matching observed line changes in the archive.');
     }
     facts.push(`Archive timestamp: ${archive?.updatedAt||'unavailable'}. Live board: ${window.__health?.ok?'loaded':'unavailable or incomplete'}. No personal slips, verified PrizePicks lines, or profit data are available here.`);
     return facts.join('\n\n');
