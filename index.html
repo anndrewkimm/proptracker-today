@@ -576,7 +576,7 @@ function card(c, all, chosen) {
       <div class="who"><strong>${esc(c.name)}</strong><div class="sub">${esc(c.team || '?')} ${c.isHome ? 'vs' : '@'} ${esc(c.opp || '?')} · ${esc(form)}</div><div class="pick">${esc(pickText(c))}</div></div>
       <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} strong signs">${stars(c)}</span></div>
     </div>
-    <div class="tags">${kindTag(c)}${pills}</div>${std}${window.lineMovementHTML?.(c)||''}
+    <div class="tags">${kindTag(c)}${window.lineUsualHTML?.(c)||''}${pills}</div>${std}${window.lineMovementHTML?.(c)||''}
     <div class="row"><button type="button" data-open="${esc(k)}">${open ? 'Hide stats' : 'Stats'}</button><button type="button" data-add="${esc(k)}" class="${chosen[k] ? 'on' : ''}">${chosen[k] ? 'Added' : '+ Add'}</button></div>
     ${open ? detail(c, all) : ''}
   </article>`;

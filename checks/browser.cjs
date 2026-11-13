@@ -57,7 +57,9 @@ async function fixtureChecks(browser, url, device) {
     version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
     days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
       {rank:1,id:'1966',name:'Archived Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19,signs:['Less']}]}},
-    movement:{test:[{name:'Test Player',stat:'points',line:20.5,over:-110,under:-110,at:'2026-11-05T21:00:00Z'},
+    movement:{...Object.fromEntries([1,2,3].map(d=>[`old${d}|1966|points`,[{name:'Test Player',stat:'points',line:24.5,over:-110,under:-110,
+        at:`2026-11-0${d}T21:00:00Z`,tip:`2026-11-0${d}T23:00:00Z`}]])),
+      test:[{name:'Test Player',stat:'points',line:20.5,over:-110,under:-110,at:'2026-11-05T21:00:00Z'},
       {name:'Test Player',stat:'points',line:21.5,over:-115,under:-105,at:'2026-11-05T22:00:00Z'}]}
   }}));
   await context.route(/espn\.com/, async route => {
@@ -99,7 +101,10 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('article.card').count(),1,'Only moved lines keeps a net mover');
   await onlyMoved(false);
   await page.locator('article.card .movement-strip summary').click();
-  assert.match(await page.locator('article.card .movement-strip').innerText(),/not the cause/);
+  assert.match(await page.locator('article.card .movement-strip').innerText(),/At the new line the price is close to even: Over 18.5 is about 50%/);
+  assert.match(await page.locator('article.card .movement-strip').innerText(),/not a confirmed cause/);
+  assert.match(await page.locator('article.card .tags').innerText(),/Low line · usual 24.5/,'Line well under his usual is labeled');
+  assert.match(await page.locator('article.card .movement-strip').innerText(),/6 below his usual 24.5/);
   await page.getByRole('button',{name:'Line moves',exact:true}).click();
   assert.equal(await page.locator('.move-card').count(),1);
   assert.match(await page.locator('.move-number').innerText(),/20.5 → 18.5/);

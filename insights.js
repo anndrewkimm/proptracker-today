@@ -16,6 +16,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     .result-badge{border-radius:9px;padding:5px 10px;background:var(--soft);font-weight:650;font-size:13px}
     .result-badge.hit{color:var(--good);background:var(--good-soft)}.result-badge.miss{color:var(--bad);background:var(--bad-soft)}
     .movement-strip{padding:10px 12px;background:var(--accent-soft);border-radius:12px;margin:10px 0;font-size:13px;color:var(--accent)}
+    .clues{margin:6px 0;padding-left:18px;display:grid;gap:6px;line-height:1.45}
     .movement-strip summary{font-weight:650}.movement-strip p{color:var(--fg);line-height:1.5}
     .move-number{font-size:29px;letter-spacing:-1px;font-weight:700;margin:12px 0 4px}.move-number small{font-size:13px;letter-spacing:0;color:var(--accent)}
     .spark{width:100%;height:76px;display:block;margin:10px 0;color:var(--accent)}
@@ -77,19 +78,70 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     const points=values.map((v,i)=>`${8+i*284/Math.max(1,values.length-1)},${64-(v-low)/span*52}`).join(' ');
     return `<svg class="spark" viewBox="0 0 300 76" role="img" aria-label="Line history ${esc(values.join(' to '))}"><path d="M8 66H292" stroke="currentColor" opacity=".15"/><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>`;
   }
-  function explanation(h,c){
-    const delta=h.at(-1).line-h[0].line;
-    const easier=c&&delta?`The latest line is ${(delta<0)===(c.side==='more')?'easier':'harder'} to clear for ${c.side==='more'?'More':'Less'} than the first observed line. Your placed slip keeps its original line.`:'';
-    return `<p>${esc(easier)}</p><p><b>Why it moved</b><br>ESPN reports the numbers, not the cause. Injury news or changed betting demand could contribute; neither is confirmed here.${c?.injury?` Current status: ${esc(c.injury)}. This does not establish the cause.`:''}</p>`;
+  // What was observed around a net move (same rules as tracking.clues on the desktop). Evidence, never a confirmed cause.
+  const parts=k=>k.split('|'), pct=v=>Math.round(v*100)+'%';
+  const overChance=p=>Number.isFinite(p?.over)&&Number.isFinite(p?.under)?fairOver(p.over,p.under):null;
+  function clues(key,h,c){
+    if(!key||!netMove(h))return [];
+    const all=allHistories(), first=h[0], last=h.at(-1), down=last.line<first.line, way=down?'down':'up', [event,athlete]=parts(key), out=[];
+    const held=h.slice(0,h.findIndex(p=>p.line!==first.line));
+    const start=overChance(first), before=held.length>1?overChance(held.at(-1)):null;
+    if(start!=null&&before!=null&&(down?start-before:before-start)>=.02)out.push(`Before the number changed, the ${down?'Under':'Over'} was already getting more expensive at ${first.line} (Over chance ${pct(start)} → ${pct(before)}): money was coming in on that side.`);
+    const now=overChance(last);
+    if(now!=null){
+      const lean=(down?now<.48:now>.52)?'still leans '+(down?'Under':'Over'):(down?now>.52:now<.48)?'now leans '+(down?'Over':'Under'):'is close to even';
+      out.push(`At the new line the price ${lean}: Over ${last.line} is about ${pct(now)} with the book's cut removed.`);
+    }
+    const others=Object.entries(all).filter(([k])=>k!==key&&parts(k)[0]===event&&parts(k)[1]===athlete), moved=others.filter(([,o])=>netMove(o));
+    const same=moved.filter(([,o])=>(o.at(-1).line<o[0].line)===down).map(([k,o])=>`${STAT_NAME[parts(k)[2]]||parts(k)[2]} ${o[0].line} → ${o.at(-1).line}`);
+    if(same.length)out.push(`His other lines moved ${way} too (${same.slice(0,4).join(', ')}), which points to something about him (minutes, role or health) rather than this one stat.`);
+    else if(others.length>=2&&!moved.length)out.push(`Only this line moved for him: his other ${others.length} lines in this game held, so it looks specific to this stat.`);
+    const game=Object.entries(all).filter(([k,o])=>parts(k)[0]===event&&parts(k)[1]!==athlete&&netMove(o)).map(([,o])=>o);
+    const withIt=game.filter(o=>(o.at(-1).line<o[0].line)===down).length;
+    if(game.length>=6&&withIt/game.length>=.75)out.push(`${withIt} of the ${game.length} other lines that moved in this game also went ${way}, which usually follows a game-level change (expected pace or score, or a lineup change).`);
+    else if(game.length>=6&&withIt/game.length<=.25)out.push(`Most other lines that moved in this game went the other way (${game.length-withIt} of ${game.length}), so this looks specific to him.`);
+    const team=c&&S.athletes[c.id]?.team;
+    if(team){
+      const listed=Object.entries(S.injuries).filter(([,i])=>String(i.team)===String(team)&&i.status).map(([n,i])=>`${n}${n===c.name?' (him)':''} ${i.status}`);
+      if(listed.length)out.push(`${c.team||'His team'} on ESPN's injury list right now: ${listed.slice(0,5).join(', ')}${listed.length>5?`, and ${listed.length-5} more`:''}. When each was listed is not known here.`);
+    }
+    return out;
   }
-  function timeline(h,c){return `${spark(changes(h))}<div class="timeline">${h.map(p=>`<div><b>${p.line}</b> <span class="sub">${esc(time(p.at))} · Over ${p.over??'—'} / Under ${p.under??'—'}</span></div>`).join('')}</div>${explanation(h,c)}<p class="sub">Observed times, not exact change times. DraftKings via ESPN; PrizePicks can differ.</p>`;}
+  // His usual line: the median of the latest lines from his last 10 tracked games (at least 3).
+  function usual(key,tip){
+    const [event,athlete,stat]=parts(key);
+    const lines=Object.entries(allHistories()).filter(([k,o])=>{const p=parts(k);return p[0]!==event&&p[1]===athlete&&p[2]===stat&&Date.parse(o.at(-1).tip)<tip;})
+      .sort(([,a],[,b])=>Date.parse(b.at(-1).tip)-Date.parse(a.at(-1).tip)).slice(0,10).map(([,o])=>o.at(-1).line).sort((a,b)=>a-b);
+    const n=lines.length;
+    return n<3?null:{mid:n%2?lines[(n-1)/2]:(lines[n/2-1]+lines[n/2])/2,n};
+  }
+  function lineLabel(line,u){
+    if(!u||!Number.isFinite(line))return null;
+    const gap=line-u.mid;
+    if(Math.abs(gap)<1||Math.abs(gap)<.1*u.mid)return null;
+    const low=gap<0;
+    return {low,text:`${low?'Low':'High'} line · usual ${u.mid}`,why:`DraftKings has ${line}, ${Math.abs(gap)} ${low?'below':'above'} his usual ${u.mid} (median of his last ${u.n} tracked games). A lower line is easier for More and a higher one for Less, but lines usually sit off his usual for a reason (minutes, role, injuries, matchup), so check why first.`};
+  }
+  function explanation(h,c,key,label){
+    const delta=h.at(-1).line-h[0].line, seen=clues(key,h,c);
+    const easier=c&&delta?`The latest line is ${(delta<0)===(c.side==='more')?'easier':'harder'} to clear for ${c.side==='more'?'More':'Less'} than the first observed line. Your placed slip keeps its original line.`:'';
+    const why=seen.length?`<b>What we can see around this move</b><ul class="clues">${seen.map(s=>`<li>${esc(s)}</li>`).join('')}</ul><span class="sub">Observed clues, not a confirmed cause: the feed gives the numbers, not the reason.</span>`
+      :`<b>Why it moved</b><br>ESPN reports the numbers, not the cause, and nothing else observed around it stands out. Injury news or changed betting demand could contribute.`;
+    return `<p>${esc(easier)}</p>${label?`<p><b>${esc(label.text)}.</b> ${esc(label.why)}</p>`:''}<p>${why}</p>`;
+  }
+  function timeline(h,c,key,label){return `${spark(changes(h))}<div class="timeline">${h.map(p=>`<div><b>${p.line}</b> <span class="sub">${esc(time(p.at))} · Over ${p.over??'—'} / Under ${p.under??'—'}</span></div>`).join('')}</div>${explanation(h,c,key,label)}<p class="sub">Observed times, not exact change times. DraftKings via ESPN; PrizePicks can differ.</p>`;}
   let merged=null;  // rebuilt whenever the archive or local observations change
   const allHistories=()=>merged||=histories();
-  const historyFor=c=>{const p=S.props.find(p=>p.id===c.id&&p.stat===c.stat);return p?allHistories()[`${p.game.id}|${c.id}|${c.stat}`]||[]:[];};
+  const propFor=c=>S.props.find(p=>p.id===c.id&&p.stat===c.stat);
+  const keyFor=c=>{const p=propFor(c);return p?`${p.game.id}|${c.id}|${c.stat}`:null;};
+  const historyFor=c=>allHistories()[keyFor(c)]||[];
+  const labelFor=c=>{const p=propFor(c);return p?lineLabel(c.line,usual(keyFor(c),Date.parse(p.game.tip))):null;};
   window.lineMoved=c=>netMove(historyFor(c));
+  // 'Low line · usual 11.5': green when it favors the pick's side, red when it works against it.
+  window.lineUsualHTML=c=>{const l=labelFor(c);return l?`<span class="tag ${l.low===(c.side==='more')?'good':'bad'}" title="${esc(l.why)}">${esc(l.text)}</span>`:'';};
   window.lineMovementHTML=c=>{
     const h=historyFor(c);if(!netMove(h))return '';
-    return `<details class="movement-strip"><summary>DK line ${esc(moveText(h,STAT_NAME[c.stat]))}</summary>${timeline(h,c)}</details>`;
+    return `<details class="movement-strip"><summary>DK line ${esc(moveText(h,STAT_NAME[c.stat]))}</summary>${timeline(h,c,keyFor(c),labelFor(c))}</details>`;
   };
   window.captureLineObservations=()=>{
     if(!window.__health?.ok)return;
@@ -125,8 +177,8 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     const back=el('move-returned').checked;
     const moved=Object.entries(allHistories()).filter(([,h])=>(netMove(h)||(back&&changes(h).length>1))&&h[0].name.toLowerCase().includes(q)&&(!todayOnly||(h.at(-1).tip&&et(h.at(-1).tip)===S.today))).sort(([,a],[,b])=>Date.parse(b.at(-1).at)-Date.parse(a.at(-1).at));
     el('line-history').innerHTML=moved.map(([key,h])=>{
-      const first=h[0],last=h.at(-1),delta=last.line-first.line;
-      return `<article class="move-card"><div class="result-head">${photo(first.name,key.split('|')[1])}<div><b>${esc(first.name)}</b><div class="sub">${esc(STAT_NAME[first.stat])} · DraftKings</div></div></div><div class="move-number">${first.line} → ${last.line} <small>${delta>0?'↑ +':delta<0?'↓ −':'back to the first line'}${delta?Math.abs(delta):''}</small></div><div class="sub">${esc(time(first.at))} → ${esc(time(last.at))}</div>${spark(changes(h))}<details><summary>Timeline & why</summary>${timeline(h)}</details></article>`;
+      const first=h[0],last=h.at(-1),delta=last.line-first.line,label=lineLabel(last.line,usual(key,Date.parse(last.tip)));
+      return `<article class="move-card"><div class="result-head">${photo(first.name,key.split('|')[1])}<div><b>${esc(first.name)}</b><div class="sub">${esc(STAT_NAME[first.stat])} · DraftKings</div></div></div><div class="move-number">${first.line} → ${last.line} <small>${delta>0?'↑ +':delta<0?'↓ −':'back to the first line'}${delta?Math.abs(delta):''}</small></div><div class="sub">${esc(time(first.at))} → ${esc(time(last.at))}</div>${label?`<span class="tag goblin">${esc(label.text)}</span>`:''}${spark(changes(h))}<details><summary>Timeline & why</summary>${timeline(h,null,key,label)}</details></article>`;
     }).join('')||'<div class="empty">No lines sit away from where they were first observed in this view. Unchanged lines, price-only updates and lines that came back are left out. Try Last 30 days for older moves.</div>';
   }
   function render(){
