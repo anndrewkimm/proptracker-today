@@ -1,5 +1,5 @@
 // Cache only this app's shell. ESPN data is never silently served from this cache.
-const CACHE = 'proptracker-shell-v4';
+const CACHE = 'proptracker-shell-v5';
 const HOME = new URL('./', self.location.href).href;
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([HOME, new URL('insights.js',HOME).href])).then(() => self.skipWaiting()));

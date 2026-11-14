@@ -21,13 +21,21 @@ const tomorrowEvent = {...event, date:'2026-11-07T23:00:00Z'};
 let slate = 'today';
 let providerName = 'Draft Kings';
 let propLine = 20.5;
+let injuryPayloadOverride = null;
 function fixture(url) {
   if (url.includes('/scoreboard')) {
     if (url.includes('dates=20261106')) return {leagues:[{season:{year:2027}}], events:[slate === 'today' ? event : finishedEvent]};
     if (url.includes('dates=20261107')) return {leagues:[{season:{year:2027}}], events:[tomorrowEvent]};
     return {season:{year:2027}, events:[finishedEvent]};
   }
-  if (url.includes('/injuries')) return {injuries:[]};
+  if (url.includes('/injuries')) return injuryPayloadOverride || {timestamp:fixedTime.toISOString(), injuries:[
+    {id:1,injuries:[
+      {athlete:{displayName:'Questionable Teammate'},status:'Questionable'},
+      {athlete:{displayName:'Another Teammate'},status:'Doubtful'},
+      {athlete:{displayName:'Quinten Post'},status:'Out'},
+      {athlete:{displayName:'Zach Edey'},status:'Out',date:'2026-11-05T23:16Z',
+        longComment:'With Zach Edey out, Test Player will likely get the starting nod.'}]},
+    {id:'2',injuries:[{athlete:{displayName:'Opponent Center'},status:'Out'}]}]};
   if (url.includes('/propBets')) return {items:['Total Points', 'Total Rebounds', 'Total Assists',
     'Total 3-Point Field Goals', 'Total Steals', 'Total Blocks',
     'Total Points, Rebounds, and Assists', 'Total Points and Rebounds',
@@ -78,6 +86,8 @@ async function fixtureChecks(browser, url, device) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.clock.install({time:fixedTime});
+  await context.addInitScript(({time}) => localStorage.setItem('pt.ath.1966', JSON.stringify({
+    t:time-864e5,name:'Test Player',team:'2'})), {time:fixedTime.getTime()});
   let mode = 'healthy', fallbacks = 0;
   await context.route('https://api.github.com/**',route=>route.fulfill({headers:cors,json:{object:{sha:'a'.repeat(40)}}}));
   await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({headers:cors,json:{
@@ -101,6 +111,27 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true, JSON.stringify(await page.evaluate(() => window.__health)));
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  const availability = await page.locator('article.card .availability').innerText();
+  for (const text of ['Zach Edey (Out)', 'Quinten Post (Out)', 'Questionable Teammate (Questionable)',
+    'Opponent Center (Out)', 'will likely get the starting nod', 'starting lineup unverified', 'does not explicitly adjust'])
+    assert(availability.includes(text), `Injury context must be visible without opening Stats: ${text}`);
+  assert.equal(await page.locator('.detail').count(),0);
+  await page.screenshot({path:path.join(root,'../.phone-tools/today-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  const checks = await page.evaluate(() => {
+    const original=S.injuries;
+    const p=S.props[0];
+    S.injuries={'TEST PLAYER':{status:'Out',team:'1'}};
+    const excludedByName=candidate(p)===null;
+    S.injuries={'Different spelling':{id:p.id,status:'Out',team:'1'}};
+    const excludedById=candidate(p)===null;
+    S.injuries=original;
+    const meta=S.injuryMeta;
+    S.injuryMeta={...meta,sourceTime:Date.now()-31*60000};
+    const staleHidden=board().length===0;
+    S.injuryMeta=meta;
+    return {excludedByName,excludedById,staleHidden};
+  });
+  assert.deepEqual(checks,{excludedByName:true,excludedById:true,staleHidden:true});
   await checkPhoneLayout(page, 'Today');
   await page.getByText('Filters and games', {exact:true}).click();
   await checkPhoneLayout(page, 'Expanded filters');
@@ -114,6 +145,9 @@ async function fixtureChecks(browser, url, device) {
   await checkPhoneLayout(page, 'Daily record');
   await page.screenshot({path:path.join(root,'../.phone-tools/record-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   await page.getByRole('button',{name:'Ask',exact:true}).first().click();
+  await page.locator('#ask-question').fill('What about Test Player with Edey out?');
+  await page.locator('#ask-form button').click();
+  assert.match(await page.locator('#ask-answer').innerText(), /Zach Edey \(Out\)/);
   await page.locator('#ask-question').fill('How have the top 5 performed?');
   await page.locator('#ask-form button').click();
   assert.match(await page.locator('#ask-answer').innerText(), /Quick facts.*[\s\S]*1\/1/);
@@ -169,8 +203,14 @@ async function fixtureChecks(browser, url, device) {
   assert.match(rotation, /do not change the displayed probability/);
   await page.locator('[data-add]').first().click();
   assert.equal(await page.locator('#mine').isVisible(), true);
+  await page.evaluate(() => {
+    S.logs['1966']=Array.from({length:10},(_,i)=>({d:`2026-10-${String(30-i).padStart(2,'0')}`,
+      p:20+i,r:10,a:5,tm:3,s:1,b:2,m:30,fa:15,ta:6,cur:true,o:'BOS',h:true}));
+    draw();
+  });
   await page.locator('[data-open]').first().click();
   assert.equal(await page.locator('.detail').count(), 1);
+  assert.equal(await page.locator('.chart .col').count(), 10, 'Expanded stats must test populated game charts');
   await checkPhoneLayout(page, 'My picks and expanded stats');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
@@ -195,7 +235,17 @@ async function fixtureChecks(browser, url, device) {
   mode = 'injuries-down';
   await refresh(page);
   assert.equal(await page.evaluate(() => window.__health.ok), false);
-  assert.match(await page.locator('#connection').innerText(), /incomplete/);
+  assert.match(await page.locator('#connection').innerText(), /Using saved data/);
+  assert.match(await page.locator('article.card .availability').innerText(), /Zach Edey \(Out\)/);
+  mode = 'healthy';
+  for (const payload of [{timestamp:fixedTime.toISOString(),injuries:[{id:'1'}]},
+    {timestamp:'2026-11-06T16:00:00Z',injuries:[]}]) {
+    injuryPayloadOverride=payload;
+    await refresh(page);
+    assert.equal(await page.evaluate(() => window.__health.ok),false);
+    assert.match(await page.locator('article.card .availability').innerText(), /Zach Edey \(Out\)/);
+  }
+  injuryPayloadOverride=null;
 
   mode = 'outage';
   await refresh(page);
@@ -225,6 +275,13 @@ async function fixtureChecks(browser, url, device) {
   await refresh(page);
   assert.equal(await page.locator('article.card').count(), 0, 'Started games must disappear from saved data');
   mode = 'healthy';
+  await refresh(page);
+  await page.evaluate(() => localStorage.removeItem(SNAPSHOT_KEY));
+  mode='injuries-down';
+  await refresh(page);
+  assert.equal(await page.locator('article.card').count(),0,'Never recommend with unavailable injury data and no verified snapshot');
+  assert.match(await page.locator('#connection').innerText(),/Picks are withheld/);
+  mode='healthy';
   await refresh(page);
   // Exercise actual cached navigation, not just a mocked offline page.
   if (process.env.PHONE_BROWSER === 'webkit') {
@@ -257,7 +314,7 @@ async function liveChecks(browser, url) {
     await finished(page);
     const health = await page.evaluate(() => window.__health);
     assert.equal(health?.ok,true,JSON.stringify(health));
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false);
+    await checkPhoneLayout(page, 'Live Today');
     assert.deepEqual(errors,[]);
     // These probes run even after tip-off, when the app has no upcoming games to load.
     await page.evaluate(async () => {

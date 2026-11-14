@@ -154,7 +154,7 @@ const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* full or blocked: just refetch next time */ } },
 };
-async function get(url) {
+async function get(url, fresh = false) {
   if (navigator.onLine === false) throw new Error('Offline');
   const primary = https(url);
   const urls = primary.includes('site.web.api.espn.com/apis/site/')
@@ -164,7 +164,7 @@ async function get(url) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const r = await fetch(address, {signal: controller.signal});
+      const r = await fetch(address, {signal: controller.signal, ...(fresh ? {cache:'no-store'} : {})});
       if (r.status === 404) return null;
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
@@ -220,13 +220,14 @@ const et = iso => new Intl.DateTimeFormat('en-CA', {timeZone: 'America/New_York'
 const dayGap = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
 
 // --- data ----------------------------------------------------------------------------------
-const S = {games: [], props: [], athletes: {}, logs: {}, injuries: {}, today: null, seasonYear: null, shown: 10, open: new Set(),
+const S = {games: [], props: [], athletes: {}, logs: {}, injuries: {}, injuryMeta: null, today: null, seasonYear: null, shown: 10, open: new Set(),
   stat: 'all', side: 'All', kind: 'Standard', sort: 'Most stars', defense: {}};
 window.__S = S;
 const SNAPSHOT_KEY = 'pt.board.v1', MAX_SNAPSHOT_AGE = 30 * 60 * 1000;
 let savedAt = null, connectionMessage = '';
 function connectionStatus() {
   let message = connectionMessage;
+  if (S.injuryMeta && !injuriesReady()) message = 'Injury coverage is over 30 minutes old or for another slate. Picks are withheld until Refresh succeeds.';
   if (savedAt) {
     const minutes = Math.max(0, Math.floor((Date.now() - savedAt) / 60000));
     message = Date.now() - savedAt > MAX_SNAPSHOT_AGE
@@ -238,17 +239,18 @@ function connectionStatus() {
 }
 function saveBoard() {
   store.set(SNAPSHOT_KEY, {time: Date.now(), today: S.today, seasonYear: S.seasonYear,
-    games: S.games, props: S.props, athletes: S.athletes, logs: S.logs, injuries: S.injuries});
+    games: S.games, props: S.props, athletes: S.athletes, logs: S.logs, injuries: S.injuries, injuryMeta: S.injuryMeta});
 }
 function restoreBoard() {
   const saved = store.get(SNAPSHOT_KEY);
   if (!saved || !(saved.today >= et(new Date().toISOString())) || !Number.isFinite(saved.time)
-      || saved.time > Date.now() || !Array.isArray(saved.games) || !Array.isArray(saved.props)) return false;
+      || saved.time > Date.now() || !saved.injuryMeta || !Array.isArray(saved.games) || !Array.isArray(saved.props)) return false;
   S.today = saved.today; S.seasonYear = saved.seasonYear;
   S.games = saved.games.filter(g => Date.parse(g.tip) > Date.now());
   const ids = new Set(S.games.map(g => g.id));
   S.props = saved.props.filter(p => p.game && ids.has(p.game.id));
   S.athletes = saved.athletes || {}; S.logs = saved.logs || {}; S.injuries = saved.injuries || {};
+  S.injuryMeta = saved.injuryMeta;
   savedAt = saved.time;
   buildDefense();
   return true;
@@ -295,22 +297,39 @@ async function loadLog(id) {
 }
 async function loadAthlete(id, ref) {
   const key = 'pt.ath.' + id, saved = store.get(key);
-  if (saved && Date.now() - saved.t < 7 * 864e5) { S.athletes[id] = saved; return; }
-  const a = await get(ref);
+  if (saved && Date.now() - saved.t < 5 * 60000) { S.athletes[id] = saved; return; }
+  delete S.athletes[id]; // A failed refresh must not reuse a stale team assignment.
+  const a = await get(ref, true);
   if (!a || !a.displayName) throw new Error('Player details unavailable');
   const team = ((a.team || {}).$ref || '').match(/teams\/(\d+)/);
-  S.athletes[id] = {t: Date.now(), name: a.displayName, team: team ? team[1] : null};
+  S.athletes[id] = {t: Date.now(), name: a.displayName, team: a.team?.id != null ? String(a.team.id) : team ? team[1] : null};
   store.set(key, S.athletes[id]);
 }
 async function loadInjuries() {
-  const json = await get(SITE + '/injuries');
+  const json = await get(SITE + '/injuries', true);
   if (!json || !Array.isArray(json.injuries)) throw new Error('Injury feed unavailable');
+  const sourceTime = Date.parse(json.timestamp);
+  if (!Number.isFinite(sourceTime) || sourceTime > Date.now() + 60000 || Date.now() - sourceTime > MAX_SNAPSHOT_AGE)
+    throw new Error('Injury feed timestamp missing or stale');
   const out = {};
-  for (const team of (json && json.injuries) || []) for (const i of team.injuries || []) {
-    const a = i.athlete || {}, name = a.displayName;
-    if (name) out[name] = {status: i.status, team: team.id, text: i.shortComment || ''};
+  for (const team of json.injuries) {
+    if (team.id == null || !Array.isArray(team.injuries)) throw new Error('Incomplete team injury data');
+    for (const i of team.injuries) {
+      const a = i.athlete || {}, name = a.displayName;
+      if (!name || typeof i.status !== 'string' || !i.status.trim()) throw new Error('Incomplete player injury data');
+      const link = (a.links || []).map(l => l.href || '').join(' ').match(/\/id\/(\d+)/);
+      const status = i.status.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+      out[name] = {id: a.id != null ? String(a.id) : link?.[1], name, status, team: String(team.id),
+        text: i.shortComment || '', report: i.longComment || '', reportedAt: i.date || null};
+    }
   }
   S.injuries = out;
+  S.injuryMeta = {fetchedAt:Date.now(), sourceTime, day:S.today};
+}
+const plainName = name => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function injuriesReady() {
+  return S.injuryMeta && S.injuryMeta.day === S.today && Number.isFinite(S.injuryMeta.sourceTime)
+    && Date.now() - S.injuryMeta.sourceTime <= MAX_SNAPSHOT_AGE;
 }
 async function loadGame(event) {
   const comp = event.competitions[0];
@@ -318,7 +337,7 @@ async function loadGame(event) {
   const sides = {};
   for (const c of comp.competitors) {
     const code = c.team.abbreviation;
-    sides[c.homeAway] = {id: c.team.id, code: NBA_CODE[code] || code};
+    sides[c.homeAway] = {id: String(c.team.id), code: NBA_CODE[code] || code};
   }
   const odds = await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
   if (odds && !Array.isArray(odds.items)) throw new Error('Game odds format changed');
@@ -379,7 +398,8 @@ function candidate(prop) {
   const {game, id, stat, line, over, under} = prop;
   const a = S.athletes[id];
   if (!a) return null;
-  const inj = S.injuries[a.name];
+  const inj = Object.values(S.injuries).find(i => i.id === String(id))
+    || Object.entries(S.injuries).find(([name]) => plainName(name) === plainName(a.name))?.[1];
   if (inj && OUT.includes(inj.status)) return null;
   const pOver = fairOver(over, under), more = pOver >= .5, market = more ? pOver : 1 - pOver;
   const teamSide = a.team === game.home.id ? 'home' : a.team === game.away.id ? 'away' : null;
@@ -433,12 +453,34 @@ function candidate(prop) {
   if (def) c.def = def;
   c.mates = [];
   c.oppsOut = [];
+  c.teamStatuses = []; c.opponentStatuses = []; c.roleReports = [];
   for (const [name, i] of Object.entries(S.injuries)) {
+    const sameTeam = team && String(i.team) === String(team.id);
+    const otherTeam = opp && String(i.team) === String(opp.id);
+    if (sameTeam && i.status !== 'Available') c.teamStatuses.push(`${name} (${i.status})`);
+    if (otherTeam && i.status !== 'Available') c.opponentStatuses.push(`${name} (${i.status})`);
+    if (sameTeam && i.report?.includes(a.name) && Date.now() - Date.parse(i.reportedAt) < 2 * 864e5)
+      c.roleReports.push(`ESPN report (${i.reportedAt}): ${i.report}`);
     if (!OUT.includes(i.status) || name === a.name) continue;
-    if (team && i.team === team.id) c.mates.push(`${name} (${i.status})`);
-    if (opp && i.team === opp.id) c.oppsOut.push(`${name} (${i.status})`);
+    if (sameTeam) c.mates.push(`${name} (${i.status})`);
+    if (otherTeam) c.oppsOut.push(`${name} (${i.status})`);
   }
   return c;
+}
+function availabilityNotes(c) {
+  const notes = [];
+  if (c.teamStatuses?.length) notes.push(`${c.team || 'Team'}: ${c.teamStatuses.join(', ')}.`);
+  if (c.opponentStatuses?.length) notes.push(`${c.opp || 'Opponent'}: ${c.opponentStatuses.join(', ')}.`);
+  notes.push(...new Set(c.roleReports || []));
+  if (!c.team || !c.opp) notes.push('Team assignment unavailable; injury coverage cannot be matched reliably.');
+  if (S.injuryMeta) notes.push(`ESPN injury feed as of ${new Date(S.injuryMeta.sourceTime).toLocaleString()}. Current statuses; game-day starting lineup unverified.`);
+  else notes.push('Injury coverage unavailable.');
+  if (c.mates?.length || c.roleReports?.length) notes.push('Role-change caution: chance uses market odds and recent form. It does not explicitly adjust for a new starter or changed minutes; a Less pick can be vulnerable if his role grows.');
+  if (!c.teamStatuses?.length && !c.opponentStatuses?.length) notes.push('No matched injury entries is not confirmation that everyone will play.');
+  return notes;
+}
+function availabilityHTML(c) {
+  return `<div class="availability sub">${availabilityNotes(c).map(n => `<div>${esc(n)}</div>`).join('')}</div>`;
 }
 const stars = c => '★'.repeat(c.signs.length) + '☆'.repeat(MAX_SIGNS - c.signs.length);
 const pickText = c => `${c.side === 'more' ? 'More' : 'Less'} ${c.line} ${STAT_NAME[c.stat]}`;
@@ -581,12 +623,13 @@ function card(c, all, chosen) {
       <div class="who"><strong>${esc(c.name)}</strong><div class="sub">${esc(c.team || '?')} ${c.isHome ? 'vs' : '@'} ${esc(c.opp || '?')} · ${esc(form)}</div><div class="pick">${esc(pickText(c))}</div></div>
       <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} strong signs">${stars(c)}</span></div>
     </div>
-    <div class="tags">${kindTag(c)}${window.lineUsualHTML?.(c)||''}${pills}</div>${std}${window.lineMovementHTML?.(c)||''}
+    <div class="tags">${kindTag(c)}${window.lineUsualHTML?.(c)||''}${pills}</div>${std}${availabilityHTML(c)}${window.lineMovementHTML?.(c)||''}
     <div class="row"><button type="button" data-open="${esc(k)}">${open ? 'Hide stats' : 'Stats'}</button><button type="button" data-add="${esc(k)}" class="${chosen[k] ? 'on' : ''}">${chosen[k] ? 'Added' : '+ Add'}</button></div>
     ${open ? detail(c, all) : ''}
   </article>`;
 }
 function board() {
+  if (!injuriesReady()) return [];
   if (savedAt && Date.now() - savedAt > MAX_SNAPSHOT_AGE) return [];
   const seen = new Set(), all = [];
   for (const p of S.props) {
@@ -613,7 +656,7 @@ function draw() {
   if (S.sort === 'Most stars') picks = picks.map((c, i) => [c, i]).sort((a, b) => b[0].signs.length - a[0].signs.length || a[1] - b[1]).map(x => x[0]);
   if ($('best').checked) { const once = new Set(); picks = picks.filter(c => !once.has(c.id) && once.add(c.id)); }
   const total = picks.length;
-  $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${S.props.length ? (movedOnly ? 'No lines have moved among the picks matching these filters. A line counts once it differs from the first one observed.' : 'No picks match these filters.') : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
+  $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${!injuriesReady() ? 'Picks are withheld until current injury coverage is verified. Tap Refresh to retry.' : S.props.length ? (movedOnly ? 'No lines have moved among the picks matching these filters. A line counts once it differs from the first one observed.' : 'No picks match these filters.') : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
   $('count').textContent = total ? `${total} picks match` + (total > S.shown ? `, showing the top ${S.shown}` : '') : '';
   $('more').hidden = total <= S.shown;
   const mineList = all.filter(c => chosen[key(c)]);
@@ -621,7 +664,7 @@ function draw() {
   if (mineList.length) {
     const together = mineList.reduce((x, c) => x * c.score, 1), avg = mean(mineList.map(c => c.score));
     $('mine').innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div><b>My picks (${mineList.length})</b><div class="sub">Average ${Math.round(avg * 100)}% · all ${mineList.length} hit: ${Math.round(together * 100)}%${mineList.length < 2 ? ' · PrizePicks needs at least 2' : ''}</div></div><button type="button" data-clear="1">Clear</button></div>
-      <ul>${mineList.map(c => `<li><span>${esc(c.name)}: <b>${esc(pickText(c))}</b> <span class="sub">${Math.round(c.score * 100)}%</span>${window.lineMovementHTML?.(c)||''}</span><button type="button" data-add="${esc(key(c))}">Remove</button></li>`).join('')}</ul>`;
+      <ul>${mineList.map(c => `<li><span>${esc(c.name)}: <b>${esc(pickText(c))}</b> <span class="sub">${Math.round(c.score * 100)}%</span>${availabilityHTML(c)}${window.lineMovementHTML?.(c)||''}</span><button type="button" data-add="${esc(key(c))}">Remove</button></li>`).join('')}</ul>`;
   }
 }
 function drawAll() {
@@ -658,7 +701,7 @@ async function load() {
   savedAt = null; connectionMessage = '';
   $('status').textContent = "Loading today's games…";
   S.games = []; S.props = [];
-  S.injuries = {};
+  S.injuries = {}; S.injuryMeta = null;
   try {
     // Ask for today's ET date: ESPN's undated scoreboard keeps showing last night's (finished) games well into
     // the morning, which left the page with no lines. Once every game today has started, show tomorrow's slate.
@@ -678,8 +721,11 @@ async function load() {
     S.seasonYear = (score.season || ((score.leagues || [])[0] || {}).season || {}).year || new Date().getFullYear() + 1;
     S.today = day;
     const warnings = [];
-    const [, gameErrors] = await Promise.all([
-      loadInjuries().catch(e => warnings.push('Injuries: ' + e)), pool(events, 5, loadGame)]);
+    const [injuryResult, gameResult] = await Promise.allSettled([
+      loadInjuries(), pool(events, 5, loadGame)]);
+    if (injuryResult.status === 'rejected') throw injuryResult.reason;
+    if (gameResult.status === 'rejected') throw gameResult.reason;
+    const gameErrors = gameResult.value;
     if (gameErrors.length) throw new Error('Some game lines failed to load: ' + gameErrors.join('; '));
     S.props.sort((a, b) => Math.abs(fairOver(b.over, b.under) - .5) - Math.abs(fairOver(a.over, a.under) - .5));
     const people = [...new Map(S.props.map(p => [p.id, p.ref])).entries()];
@@ -699,7 +745,7 @@ async function load() {
     $('status').textContent = `Updated ${new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} · ${S.games.length} games to come${started ? `, ${started} already started or without lines` : ''}`;
   } catch (e) {
     const restored = restoreBoard();
-    connectionMessage = restored ? '' : 'Live data is unavailable and there is no saved board for today. Tap Refresh to retry.';
+    connectionMessage = restored ? '' : 'Live data or injury coverage is unavailable and there is no verified saved board for today. Picks are withheld. Tap Refresh to retry.';
     $('status').textContent = restored ? 'Live refresh failed · showing saved data' : "Couldn't refresh today's games.";
     window.__error = String(e);
     window.__health = {ok: false, errors: [String(e)], saved: restored};

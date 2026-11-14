@@ -41,7 +41,8 @@ async function json(url) {
         const p=S.props.find(p=>p.id===c.id && p.stat===c.stat);
         return {id:c.id,event:p.game.id,tip:p.game.tip,name:c.name,stat:c.stat,line:c.line,side:c.side,
           score:c.score,market:c.market,kind:c.kind,loaded:c.loaded,signs:c.signs,over:p.over,under:p.under,
-          matchup:c.matchup,formHits:c.formHits,formGames:c.formGames};
+          matchup:c.matchup,formHits:c.formHits,formGames:c.formGames,
+          availability:availabilityNotes(c),injuryCheckedAt:S.injuryMeta?.fetchedAt};
       })}));
     if (!input.day || !Array.isArray(input.events)) throw Error('No valid slate');
     const imminent=input.events.some(e=>Date.parse(e.tip)>Date.now() && Date.parse(e.tip)-Date.now()<=90*60000);

@@ -231,8 +231,8 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     const history=Object.entries(archive?.days||{}).sort(([a],[b])=>b.localeCompare(a))
       .flatMap(([date,d])=>d.picks.map(p=>({...p,date}))).filter(p=>mentions(p.name));
     const facts=[recordText(x)];
-    for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''}`);
-    for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off.`);
+    for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''} ${availabilityNotes(c).join(' ')}`);
+    for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off. Injury context at selection: ${p.availability?.join(' ')||'not captured for this older pick'}`);
     if (/line|mov|chang/.test(q)) {
       const observed=Object.values(allHistories()).filter(netMove);
       const matching=observed.filter(h=>mentions(h[0].name));

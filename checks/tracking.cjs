@@ -19,6 +19,14 @@ test('no hindsight, no partial boards, no collection too early',()=>{
   assert.deepEqual(observe(empty(),{...input,ok:false},now).days,{});
   assert.equal(observe(empty(),input,tip).days[input.day].status,'missed');
 });
+
+test('injury context is frozen with the pick, never replaced by later reports',()=>{
+  const availability=['Team: Zach Edey (Out), Quinten Post (Out).'];
+  const s=observe(empty(),{...input,picks:[{...p,availability,injuryCheckedAt:now}]},now);
+  observe(s,{...input,picks:[{...p,availability:['No current entries']}]},'2026-11-11T23:30:00Z');
+  assert.deepEqual(s.days[input.day].picks[0].availability,availability);
+  assert.equal(s.days[input.day].picks[0].injuryCheckedAt,now);
+});
 test('one player, standard lines only, ties stable',()=>{
   const s=observe(empty(),{...input,picks:[p,{...p,stat:'rebounds'},{...p,id:'2',kind:'goblin'}]},now);
   assert.equal(s.days[input.day].picks.length,1);
