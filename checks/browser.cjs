@@ -3,8 +3,9 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const {chromium, devices} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const {chromium, webkit, devices} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '..');
+const cors = {'access-control-allow-origin':'*'};
 fs.mkdirSync(path.join(root,'../.phone-tools'),{recursive:true});
 const fixedTime = new Date('2026-11-06T18:00:00Z');
 const base = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba';
@@ -57,22 +58,29 @@ async function checkPhoneLayout(page, view) {
       document: document.documentElement.scrollWidth,
       viewport: window.visualViewport.width,
       main: document.querySelector('main').getBoundingClientRect().width,
+      clippedStats: [...document.querySelectorAll('.chips button')].filter(b => {
+        const r=b.getBoundingClientRect(), row=b.parentElement.getBoundingClientRect();
+        return r.width && row.height && (r.left < row.left - 1 || r.right > row.right + 1);
+      }).map(b => b.textContent),
     }));
     assert(layout.document <= width + 1, `${view} at ${width}px overflows: ${JSON.stringify(layout)}`);
     assert(Math.abs(layout.viewport - width) <= 1, `${view} must not zoom out to fit`);
     assert(layout.main <= width - 28 + 1, `${view} must retain phone gutters`);
+    assert.deepEqual(layout.clippedStats, [], `${view}: all stat/filter choices must fit without sideways scrolling`);
   }
   await page.setViewportSize(original);
 }
 async function fixtureChecks(browser, url, device) {
-  const context = await browser.newContext({...devices[device]});
+  const context = await browser.newContext({...devices[device],
+    ...(process.env.PHONE_BROWSER === 'webkit' ? {serviceWorkers:'block'} : {})});
   const page = await context.newPage();
+  if (process.env.PHONE_DEBUG) page.on('requestfailed', r => console.log(r.url(), r.failure()));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.clock.install({time:fixedTime});
   let mode = 'healthy', fallbacks = 0;
-  await context.route('https://api.github.com/**',route=>route.fulfill({json:{object:{sha:'a'.repeat(40)}}}));
-  await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({json:{
+  await context.route('https://api.github.com/**',route=>route.fulfill({headers:cors,json:{object:{sha:'a'.repeat(40)}}}));
+  await context.route('https://raw.githubusercontent.com/**', route => route.fulfill({headers:cors,json:{
     version:1,updatedAt:fixedTime.toISOString(),collectionOk:true,
     days:{'2026-11-05':{status:'locked',at:'2026-11-05T22:00:00Z',model:'test-v1',source:'DraftKings via ESPN',picks:[
       {rank:1,id:'1966',name:'Archived Player',stat:'points',side:'less',line:20.5,score:.6,market:.52,result:'hit',actual:19,signs:['Less']}]}},
@@ -87,11 +95,11 @@ async function fixtureChecks(browser, url, device) {
     if (mode === 'outage' || (mode === 'primary-down' && requestUrl.includes('site.web.api.espn.com/apis/site/'))
         || (mode === 'injuries-down' && requestUrl.includes('/injuries'))) return route.abort('failed');
     if (requestUrl.includes('site.api.espn.com')) fallbacks++;
-    await route.fulfill({json:fixture(requestUrl)});
+    await route.fulfill({headers:cors,json:fixture(requestUrl)});
   });
   await page.goto(url);
   await finished(page);
-  assert.equal(await page.evaluate(() => window.__health.ok), true);
+  assert.equal(await page.evaluate(() => window.__health.ok), true, JSON.stringify(await page.evaluate(() => window.__health)));
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
   await checkPhoneLayout(page, 'Today');
   await page.getByText('Filters and games', {exact:true}).click();
@@ -219,6 +227,12 @@ async function fixtureChecks(browser, url, device) {
   mode = 'healthy';
   await refresh(page);
   // Exercise actual cached navigation, not just a mocked offline page.
+  if (process.env.PHONE_BROWSER === 'webkit') {
+    assert.deepEqual(errors, []);
+    console.log(`${device}: WebKit layout and data regression checks PASS (offline navigation tested in Chromium)`);
+    await context.close();
+    return;
+  }
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
   await context.setOffline(true);
@@ -276,7 +290,7 @@ async function liveChecks(browser, url) {
 }
 (async () => {
   let server;
-  const browser = await chromium.launch({headless:true});
+  const browser = await (process.env.PHONE_BROWSER === 'webkit' ? webkit : chromium).launch({headless:true});
   try {
     if (process.argv[2] === '--live') await liveChecks(browser, process.argv[3]);
     else {

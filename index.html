@@ -24,6 +24,7 @@
   --accent: #a78bfa; --accent-soft: #a78bfa26; --good: #4ade80; --good-soft: #4ade8022; --bad: #f87171;
   --bad-soft: #f8717122; --warn: #fbbf24; --warn-soft: #fbbf2422; --photo: #30354a; color-scheme: dark }
 * { box-sizing: border-box }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100% }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding: max(12px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 40px max(14px, env(safe-area-inset-left, 0px)) }
 /* Keep intrinsic chip/select widths inside the phone, including nested view wrappers. */
@@ -39,14 +40,14 @@ button { background: var(--panel); border: 1px solid var(--line); border-radius:
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
 button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600 }
 input, select { width: 100%; background: var(--soft); border: 0; border-radius: 10px; padding: 9px 12px; min-height: 40px }
-.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 2px; max-width: 100% }
 .chips button { flex: none; min-height: 34px; padding: 4px 11px; font-size: 13.5px; border-radius: 17px }
 details.box, .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px }
 summary { cursor: pointer; font-weight: 600 }
-.filters { display: grid; gap: 8px; margin-top: 8px }
+.filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px }
 .bar { height: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; margin-top: 4px }
 .bar i { display: block; height: 100%; background: var(--accent); width: 0 }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: grid; gap: 7px }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px }
 .top { display: flex; align-items: center; gap: 10px }
 .photo { flex: none; width: 54px; height: 54px; border-radius: 50%; background: var(--photo); color: #e4e9f5; position: relative; overflow: hidden; display: grid; place-items: center; font-size: 17px }
 .photo img { position: absolute; left: 50%; top: 2px; transform: translateX(-50%); height: 54px; max-width: none }

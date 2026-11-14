@@ -33,8 +33,12 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --no-save --package-lock=false playwright@1.62.1
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - name: Mobile browser and outage regression tests
+        run: node checks/browser.cjs
+      - name: Safari engine phone layout and data regression tests
+        env:
+          PHONE_BROWSER: webkit
         run: node checks/browser.cjs
       - name: Frozen recommendations and grading tests
         run: node --test checks/tracking.cjs

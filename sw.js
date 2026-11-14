@@ -1,11 +1,20 @@
 // Cache only this app's shell. ESPN data is never silently served from this cache.
-const CACHE = 'proptracker-shell-v3';
+const CACHE = 'proptracker-shell-v4';
 const HOME = new URL('./', self.location.href).href;
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([HOME, new URL('insights.js',HOME).href])).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const previous = (await caches.keys()).filter(k => k.startsWith('proptracker-shell-') && k !== CACHE);
+    await self.clients.claim();
+    // Existing tabs must receive the new HTML/CSS, not just refreshed ESPN data.
+    if (previous.length) {
+      await Promise.all(previous.map(k => caches.delete(k)));
+      const windows = await self.clients.matchAll({type:'window'});
+      await Promise.allSettled(windows.filter(c => c.url.startsWith(HOME)).map(c => c.navigate(c.url)));
+    }
+  })());
 });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
