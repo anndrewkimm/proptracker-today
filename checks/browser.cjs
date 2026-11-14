@@ -113,8 +113,19 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
   const availability = await page.locator('article.card .availability').innerText();
   for (const text of ['Zach Edey (Out)', 'Quinten Post (Out)', 'Questionable Teammate (Questionable)',
-    'Opponent Center (Out)', 'will likely get the starting nod', 'starting lineup unverified', 'does not explicitly adjust'])
+    'Opponent Center (Out)'])
     assert(availability.includes(text), `Injury context must be visible without opening Stats: ${text}`);
+  const why = page.locator('article.card .pick-why');
+  assert.equal(await why.getAttribute('open'), null, 'Commentary starts collapsed');
+  await why.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'does not explicitly adjust'])
+    assert((await why.innerText()).includes(text), `Expanded commentary retains: ${text}`);
+  assert(await why.locator('b').count() > 0, 'Explanation has skimmable emphasis');
+  await checkPhoneLayout(page, 'expanded pick explanation');
+  await page.screenshot({path:path.join(root,'../.phone-tools/why-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  await why.locator('summary').click();
+  assert.equal(await why.getAttribute('open'), null, 'Commentary can close again');
   assert.equal(await page.locator('.detail').count(),0);
   await page.screenshot({path:path.join(root,'../.phone-tools/today-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   const checks = await page.evaluate(() => {

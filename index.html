@@ -67,6 +67,11 @@ summary { cursor: pointer; font-weight: 600 }
 .detail h3 { font-size: 13px; margin: 0 0 3px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em }
 .detail ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px }
 .detail li { padding-left: 18px; text-indent: -18px }
+.pick-why { border-top: 1px solid var(--line); font-size: 13px }
+.pick-why summary { padding: 10px 0; color: var(--accent); min-height: 40px }
+.why-notes { display: grid; gap: 9px; padding: 2px 0 10px; line-height: 1.5 }
+.why-notes p { margin: 0 }
+.why-notes b, .availability b, .detail b { color: var(--fg) }
 .chart { display: flex; align-items: flex-end; gap: 3px; height: 112px; position: relative; margin-top: 14px }
 .col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums }
 .col i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 2px }
@@ -480,7 +485,21 @@ function availabilityNotes(c) {
   return notes;
 }
 function availabilityHTML(c) {
-  return `<div class="availability sub">${availabilityNotes(c).map(n => `<div>${esc(n)}</div>`).join('')}</div>`;
+  const notes = availabilityNotes(c);
+  const statuses = notes.filter(n => n.startsWith(`${c.team}:`) || n.startsWith(`${c.opp}:`));
+  return `<div class="availability sub">${statuses.map(n => `<div>${skimText(n)}</div>`).join('')}</div>
+    <details class="pick-why"><summary>Why this pick</summary><div class="why-notes">
+    ${tagReasons(c).map(([label, helps, why]) => `<p><b>${esc(label)}</b> <span class="${helps === null ? '' : helps ? 'green' : 'red'}">${helps === null ? 'Context' : helps ? 'Helps' : 'Caution'}</span><br>${skimText(why)}</p>`).join('')}
+    ${notes.filter(n => !statuses.includes(n)).map(n => `<p>${skimText(n)}</p>`).join('')}
+    </div></details>`;
+}
+// Escape every text segment before adding emphasis; preserve apostrophes/entities.
+function skimText(text) {
+  const label = text.match(/^([^:]{1,48}:)(?:\s|$)/);
+  const rest = label ? text.slice(label[0].length) : text;
+  return (label ? `<b>${esc(label[1])}</b> ` : '') + rest
+    .split(/(\b\d+(?:\.\d+)?%?|\b(?:Out|Questionable|Doubtful|likely|unverified|does not explicitly adjust)\b)/g)
+    .map((part, i) => i % 2 ? `<b>${esc(part)}</b>` : esc(part)).join('');
 }
 const stars = c => '★'.repeat(c.signs.length) + '☆'.repeat(MAX_SIGNS - c.signs.length);
 const pickText = c => `${c.side === 'more' ? 'More' : 'Less'} ${c.line} ${STAT_NAME[c.stat]}`;
@@ -597,7 +616,7 @@ function chart(c) {
   return `<div><h3>${esc(STAT_NAME[c.stat])}: last ${games.length} games</h3><div class="chart">${bars}<div class="lineat" style="bottom:${c.line / top * 74 + 26}px"></div></div><div class="sub">Dashed line: ${c.line}. Green would have hit this pick.</div></div>`;
 }
 function detail(c, all) {
-  const list = (rows, mark, cls) => rows.length ? `<ul>${rows.map(r => `<li><span class="${cls}">${mark}</span> ${esc(r[1])}</li>`).join('')}</ul>` : '<div class="sub">Nothing</div>';
+  const list = (rows, mark, cls) => rows.length ? `<ul>${rows.map(r => `<li><span class="${cls}">${mark}</span> ${skimText(r[1])}</li>`).join('')}</ul>` : '<div class="sub">Nothing</div>';
   const f = factors(c), others = all.filter(o => o.id === c.id && o.stat !== c.stat).sort((a, b) => b.score - a.score);
   const why = tagReasons(c);
   return `<div class="detail">
