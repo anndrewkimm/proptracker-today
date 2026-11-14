@@ -3,7 +3,9 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   const archiveURL='https://raw.githubusercontent.com/anndrewkimm/proptracker-today/tracker-data/archive.json';
   let archive=store.get('pt.public.archive.v1'), engine=null;
   const style=document.createElement('style'); style.textContent=`
-    .tracking-nav{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:12px 0 18px}
+    #board-area{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+    #board-area[hidden]{display:none}
+    .tracking-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:12px 0 18px}
     .tracking-nav button{padding:10px 5px;font-size:13px}.tracking-nav .on{background:var(--accent);color:white}
     .tracking-title{font-size:24px;letter-spacing:-.6px;margin:8px 0}.record-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
     .record-controls label{font-size:12px;color:var(--muted)}.record-controls select{margin-top:5px}
@@ -12,7 +14,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     .record-metric b{display:block;font-size:28px;letter-spacing:-1px}.record-metric span{font-size:12px;color:var(--muted)}
     .record-grid,.movement-grid{display:grid;gap:12px;margin-top:14px}.result-card,.move-card{border:1px solid var(--line);border-radius:18px;padding:16px;background:var(--panel)}
     .result-head{display:flex;align-items:center;gap:12px}.result-head .photo{width:50px;height:50px;flex-shrink:0}
-    .result-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px}
+    .result-bottom{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-top:14px;gap:8px}
     .result-badge{border-radius:9px;padding:5px 10px;background:var(--soft);font-weight:650;font-size:13px}
     .result-badge.hit{color:var(--good);background:var(--good-soft)}.result-badge.miss{color:var(--bad);background:var(--bad-soft)}
     .movement-strip{padding:10px 12px;background:var(--accent-soft);border-radius:12px;margin:10px 0;font-size:13px;color:var(--accent)}

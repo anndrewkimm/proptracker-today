@@ -27,9 +27,12 @@ function fixture(url) {
     return {season:{year:2027}, events:[finishedEvent]};
   }
   if (url.includes('/injuries')) return {injuries:[]};
-  if (url.includes('/propBets')) return {items:[-110,-110].map(price => ({
-    type:{name:'Total Points'}, athlete:{$ref:athlete},
-    current:{target:{value:propLine}}, odds:{american:{value:String(price)}}}))};
+  if (url.includes('/propBets')) return {items:['Total Points', 'Total Rebounds', 'Total Assists',
+    'Total 3-Point Field Goals', 'Total Steals', 'Total Blocks',
+    'Total Points, Rebounds, and Assists', 'Total Points and Rebounds',
+    'Total Points and Assists', 'Total Assists and Rebounds'].flatMap(name => [-110,-110].map(price => ({
+    type:{name}, athlete:{$ref:athlete},
+    current:{target:{value:name === 'Total Points' ? propLine : 20.5}}, odds:{american:{value:String(price)}}}))) };
   if (url.endsWith('/odds')) return {items:[{provider:{name:providerName}, spread:-2, overUnder:220,
     propBets:{$ref:`${base}/events/123/propBets?lang=en`}}]};
   // No games last season (a rookie): ESPN sends only its filters.
@@ -44,6 +47,22 @@ async function finished(page) {
 async function refresh(page) {
   await page.evaluate(() => load());
   await finished(page);
+}
+async function checkPhoneLayout(page, view) {
+  const original = page.viewportSize();
+  for (const width of [320, 375, 390, 412, 430]) {
+    await page.setViewportSize({width, height:original.height});
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const layout = await page.evaluate(() => ({
+      document: document.documentElement.scrollWidth,
+      viewport: window.visualViewport.width,
+      main: document.querySelector('main').getBoundingClientRect().width,
+    }));
+    assert(layout.document <= width + 1, `${view} at ${width}px overflows: ${JSON.stringify(layout)}`);
+    assert(Math.abs(layout.viewport - width) <= 1, `${view} must not zoom out to fit`);
+    assert(layout.main <= width - 28 + 1, `${view} must retain phone gutters`);
+  }
+  await page.setViewportSize(original);
 }
 async function fixtureChecks(browser, url, device) {
   const context = await browser.newContext({...devices[device]});
@@ -74,12 +93,17 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true);
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  await checkPhoneLayout(page, 'Today');
+  await page.getByText('Filters and games', {exact:true}).click();
+  await checkPhoneLayout(page, 'Expanded filters');
+  await page.getByText('Filters and games', {exact:true}).click();
   await page.getByRole('button',{name:'Daily record',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('record-summary')?.textContent.includes('1/1'));
   assert.match(await page.locator('#record-summary').textContent(), /market baseline 52.0%/);
   assert.equal(await page.locator('.result-card').count(),1);
   assert.equal(await page.locator('.result-card .photo').count(),1,'Portrait falls back to initials if image is unavailable');
   assert.equal(await page.locator('#list').isVisible(),false);
+  await checkPhoneLayout(page, 'Daily record');
   await page.screenshot({path:path.join(root,'../.phone-tools/record-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   await page.getByRole('button',{name:'Ask',exact:true}).first().click();
   await page.locator('#ask-question').fill('How have the top 5 performed?');
@@ -88,6 +112,7 @@ async function fixtureChecks(browser, url, device) {
   await page.locator('#ask-question').fill('How did Archived Player do?');
   await page.locator('#ask-form button').click();
   assert.match(await page.locator('#ask-answer').innerText(), /Result: hit; actual 19/);
+  await checkPhoneLayout(page, 'Ask answer');
   await page.getByText('Optional on-device AI',{exact:true}).click();
   await page.evaluate(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));
   await page.locator('#load-ai').click();
@@ -105,8 +130,10 @@ async function fixtureChecks(browser, url, device) {
   assert.match(await page.locator('article.card .movement-strip').innerText(),/not a confirmed cause/);
   assert.match(await page.locator('article.card .tags').innerText(),/Low line · usual 24.5/,'Line well under his usual is labeled');
   assert.match(await page.locator('article.card .movement-strip').innerText(),/6 below his usual 24.5/);
+  await checkPhoneLayout(page, 'Expanded movement');
   await page.getByRole('button',{name:'Line moves',exact:true}).click();
   assert.equal(await page.locator('.move-card').count(),1);
+  await checkPhoneLayout(page, 'Line moves');
   assert.match(await page.locator('.move-number').innerText(),/20.5 → 18.5/);
   await page.screenshot({path:path.join(root,'../.phone-tools/movement-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   propLine=20.5;
@@ -136,6 +163,7 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('#mine').isVisible(), true);
   await page.locator('[data-open]').first().click();
   assert.equal(await page.locator('.detail').count(), 1);
+  await checkPhoneLayout(page, 'My picks and expanded stats');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
   providerName='DraftKings';
