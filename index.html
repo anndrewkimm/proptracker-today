@@ -85,8 +85,25 @@ summary { cursor: pointer; font-weight: 600 }
 .mine ul { list-style: none; margin: 6px 0 0; padding: 0 }
 .mine button { min-height: 30px; padding: 2px 9px; font-size: 13px; flex-shrink: 0; white-space: nowrap }
 .mine li > span { flex: 1 }
-.role-impact { border-left: 3px solid var(--accent, #8b5cf6); background: #8b5cf612; padding: 8px 10px; margin-top: 8px; font-size: 13px; overflow-wrap: anywhere }
-.role-impact p { margin: 4px 0 }
+.roster { margin-top: 8px; border-top: 1px solid var(--border, #ddd); padding-top: 8px }
+.roster > summary { font-size: 13px; touch-action: manipulation }
+.availability-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-weight: 400; margin: 4px 0 0 16px }
+.roster-team { margin-top: 10px }
+.roster-team > summary { font-size: 14px; padding: 6px 0 }
+.roster-group h4 { font-size: 12px; color: var(--muted); margin: 10px 0 6px }
+.roster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px }
+.roster-player { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 7px 3px; border-radius: 10px; background: #8b5cf609; border: 1px solid #8b5cf61a; gap: 3px }
+.roster-player.out { background: #dc26260c; border-color: #dc26264a }
+.roster-player.uncertain { background: #d977060c; border-color: #d977064a }
+.roster-player.selected { border: 2px solid #8b5cf6 }
+.roster-face { width: 38px; height: 38px; position: relative; border-radius: 50%; background: #8b5cf61a; display: grid; place-items: center; flex-shrink: 0; font-size: 12px }
+.roster-face img { position: absolute; width: 100%; height: 100%; object-fit: cover; border-radius: 50% }
+.roster-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.25 }
+.roster-position, .roster-status { font-size: 11px; color: var(--muted) }
+.out .roster-status { color: #dc2626; font-weight: 700 }
+.uncertain .roster-status { color: #b45309; font-weight: 700 }
+.roster-legend { font-size: 11px; margin: 8px 0 }
+@media(max-width: 360px) { .roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
 </style>
 </head>
 <body>
@@ -456,8 +473,7 @@ function candidate(prop) {
   c.signs = [];
   const def = opp && (S.defense[stat] || {})[opp.code];
   if (def) c.def = def;
-  c.mates = []; c.roleMatches = []; c.position = a.position || '';
-  const positionGroup = p => /G/.test(p) ? 'guard' : /C/.test(p) ? 'center' : /F/.test(p) ? 'forward' : null;
+  c.mates = []; c.position = a.position || '';
   c.oppsOut = [];
   c.teamStatuses = []; c.opponentStatuses = []; c.roleReports = [];
   for (const [name, i] of Object.entries(S.injuries)) {
@@ -468,7 +484,6 @@ function candidate(prop) {
     if (sameTeam && i.report?.includes(a.name) && Date.now() - Date.parse(i.reportedAt) < 2 * 864e5)
       c.roleReports.push(`ESPN report (${i.reportedAt}): ${i.report}`);
     if (!OUT.includes(i.status) || name === a.name) continue;
-    if (sameTeam && positionGroup(c.position) && positionGroup(c.position) === positionGroup(i.position)) c.roleMatches.push(`${name} (${i.status})`);
     if (sameTeam) c.mates.push(`${name} (${i.status})`);
     if (otherTeam) c.oppsOut.push(`${name} (${i.status})`);
   }
@@ -490,18 +505,88 @@ function availabilityNotes(c) {
   if (!c.teamStatuses?.length && !c.opponentStatuses?.length) notes.push('No matched injury entries is not confirmation that everyone will play.');
   return notes;
 }
-function roleSummaryHTML(c) {
-  if (!c.mates?.length && !c.roleReports?.length) return '';
-  const reports = (c.roleReports || []).map(n => `<p>${skimText(n)}</p>`).join('');
-  const relevance = c.roleMatches?.length
-    ? `Same position group: ${c.roleMatches.join(', ')}. Potential rotation opening; replacement order and extra minutes are unconfirmed.`
-    : 'No direct replacement role confirmed. A big being out does not automatically give a guard more minutes; position alone does not establish the rotation.';
-  return `<div class="role-impact"><b>Minutes watch${c.position ? ' · ' + esc(c.position) : ''}</b><p>${esc(relevance)}</p>${reports}<div class="sub">Minutes and touches can change separately. Chance is not boosted for these absences.</div></div>`;
+const rosterCache = new Map();
+const openRosters = new Set();
+const rosterPending = new Map();
+async function teamRoster(id) {
+  const cached = rosterCache.get(id);
+  if (cached && Date.now() - cached.time < 5 * 60000) return cached.players;
+  if (rosterPending.has(id)) return rosterPending.get(id);
+  const request = (async () => {
+    const data = await get(`${SITE}/teams/${encodeURIComponent(id)}/roster`, true);
+    if (!Array.isArray(data?.athletes) || !data.athletes.length || data.athletes.some(a => !a.id || !a.displayName))
+      throw new Error('Roster unavailable');
+    const players = data.athletes.map(a => ({id:String(a.id), name:a.displayName, position:a.position?.abbreviation || '—'}));
+    rosterCache.set(id, {time:Date.now(), players});
+    return players;
+  })();
+  rosterPending.set(id, request);
+  try { return await request; } finally { rosterPending.delete(id); }
 }
+function injuryRows(team) {
+  return Object.values(S.injuries).filter(i => String(i.team) === String(team));
+}
+function rosterTiles(players, team, selected) {
+  const injuries = injuryRows(team), fresh = injuriesReady();
+  const rows = players.map(p => {
+    const i = injuries.find(i => (i.id && i.id === p.id) || plainName(i.name) === plainName(p.name));
+    return {...p, status:fresh ? i?.status || 'Not listed' : 'Unknown'};
+  });
+  // Keep reported injuries even when ESPN's roster has not caught up with a move.
+  for (const i of injuries) if (!rows.some(p => (i.id && i.id === p.id) || plainName(i.name) === plainName(p.name)))
+    rows.push({id:i.id, name:i.name, position:i.position || '—', status:fresh ? i.status : 'Unknown'});
+  const groups = [['Guards', p => /G/.test(p)], ['Forwards', p => !/G/.test(p) && /F/.test(p)],
+    ['Centers', p => !/[GF]/.test(p) && /C/.test(p)], ['Position unavailable', p => !/[GFC]/.test(p)]];
+  return groups.map(([label, matches]) => {
+    const group = rows.filter(p => matches(p.position)).sort((a,b) => a.name.localeCompare(b.name));
+    if (!group.length) return '';
+    return `<div class="roster-group"><h4>${label}</h4><div class="roster-grid">${group.map(p => {
+      const tone = p.status === 'Out' ? 'out' : ['Doubtful','Questionable','Day-To-Day'].includes(p.status) ? 'uncertain' : '';
+      const initials = p.name.split(' ').map(n=>n[0]).slice(0,2).join('');
+      return `<div class="roster-player ${tone} ${p.id === selected ? 'selected' : ''}">
+        <span class="roster-face"><span>${esc(initials)}</span>${/^\d+$/.test(p.id || '') ? `<img loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${p.id}.png" alt="">` : ''}</span>
+        <span class="roster-name">${esc(p.name)}</span><span class="roster-position">${esc(p.position)}${p.id === selected ? ' · This pick' : ''}</span>
+        <span class="roster-status">${esc(p.status)}</span></div>`;
+    }).join('')}</div></div>`;
+  }).join('');
+}
+function availabilitySummary(c) {
+  const game = S.games.find(g => g.matchup === c.matchup);
+  if (!game) return '<div class="sub">Roster unavailable</div>';
+  const teams = [game.home, game.away].sort((a,b) => (b.code === c.team) - (a.code === c.team));
+  const counts = teams.map(t => {
+    const rows = injuryRows(t.id), out = rows.filter(i => i.status === 'Out').length;
+    const uncertain = rows.filter(i => ['Doubtful','Questionable','Day-To-Day'].includes(i.status)).length;
+    return `<span><b>${esc(t.code)}</b> ${out ? `<span class="red">${out} out</span>` : '0 out'}${uncertain ? ` · ${uncertain} uncertain` : ''}</span>`;
+  }).join('');
+  const rosterKey = `${S.today}|${c.matchup}|${c.id}`;
+  return `<details class="availability roster" data-roster-key="${esc(rosterKey)}" ${openRosters.has(rosterKey) ? 'open' : ''} data-teams="${esc(teams.map(t=>t.id).join(','))}" data-player="${esc(c.id)}">
+    <summary><span>Roster & injuries</span><span class="availability-counts">${counts}</span></summary>
+    <div class="roster-body" aria-live="polite"></div></details>`;
+}
+document.addEventListener('toggle', async e => {
+  const el = e.target;
+  if (!el.matches?.('details.roster') || !el.isConnected) return;
+  if (!el.open) { openRosters.delete(el.dataset.rosterKey); return; }
+  openRosters.add(el.dataset.rosterKey);
+  const body = el.querySelector('.roster-body');
+  body.innerHTML = '<p class="sub">Loading rosters…</p>';
+  const teams = el.dataset.teams.split(',');
+  const sections = await Promise.all(teams.map(async (id, index) => {
+    const team = S.games.flatMap(g=>[g.home,g.away]).find(t=>t.id === id);
+    let content;
+    try { content = rosterTiles(await teamRoster(id), id, el.dataset.player); }
+    catch { content = '<p class="sub">Full roster unavailable. Close and reopen to retry.</p>' + rosterTiles([], id, el.dataset.player); }
+    return `<details class="roster-team" ${index === 0 ? 'open' : ''}><summary>${esc(TEAM_NAMES[team?.code] || team?.code || id)}${index ? ' · Opponent' : ''}</summary>${content}</details>`;
+  }));
+  if (!el.isConnected) return;
+  const stamp = S.injuryMeta ? new Date(S.injuryMeta.sourceTime).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : 'unavailable';
+  body.innerHTML = `<p class="sub roster-legend">ESPN · ${esc(stamp)} · Not listed ≠ confirmed playing. Positions, not a starting lineup.</p>` + sections.join('');
+}, true);
 function availabilityHTML(c) {
   const notes = availabilityNotes(c);
   const statuses = notes.filter(n => n.startsWith(`${c.team}:`) || n.startsWith(`${c.opp}:`));
-  return `<div class="availability sub">${statuses.map(n => `<div>${skimText(n)}</div>`).join('')}</div>${roleSummaryHTML(c)}
+  return `${availabilitySummary(c)}
     <details class="pick-why"><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
     ${opportunityHTML(c)}
     ${tagReasons(c).map(([label, helps, why]) => `<p><b>${esc(label)}</b> <span class="${helps === null ? '' : helps ? 'green' : 'red'}">${helps === null ? 'Context' : helps ? 'Helps' : 'Caution'}</span><br>${skimText(why)}</p>`).join('')}
@@ -664,7 +749,7 @@ function card(c, all, chosen) {
   const k = key(c), open = S.open.has(k);
   const initials = esc(c.name.split(' ').slice(0, 2).map(w => w[0]).join(''));
   const form = c.formGames ? `L${c.formGames}: ${c.formHits}/${c.formGames} ${c.side === 'more' ? 'over' : 'under'}` : (c.loaded ? 'No recent games' : 'Loading stats…');
-  const pills = tagReasons(c).map(([t, h]) => `<span class="tag ${h === null ? '' : h ? 'good' : 'bad'}">${esc(t)}</span>`).join('');
+  const pills = tagReasons(c).filter(([t]) => !/teammates? out$/.test(t)).map(([t, h]) => `<span class="tag ${h === null ? '' : h ? 'good' : 'bad'}">${esc(t)}</span>`).join('');
   const ink = c.score >= .6 ? 'green' : c.score < .52 ? 'red' : '';
   const std = c.stdChance ? `<div class="sub">Likely PrizePicks line ≈ ${c.fair}: ${c.stdSide === 'more' ? 'More' : 'Less'} ${Math.round(c.stdChance * 100)}%</div>` : '';
   return `<article class="card">

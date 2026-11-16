@@ -22,7 +22,19 @@ let slate = 'today';
 let providerName = 'Draft Kings';
 let propLine = 20.5;
 let injuryPayloadOverride = null;
+let rosterDown = false;
 function fixture(url) {
+  if (url.includes('/roster')) {
+    if (rosterDown) return {error:'unavailable'};
+    if (url.includes('/teams/2/')) return {athletes:[
+      {id:'14',displayName:'Opponent Center',position:{abbreviation:'C'}}]};
+    return {athletes:[
+      {id:'1966',displayName:'Test Player',position:{abbreviation:'PG'}},
+      {id:'10',displayName:'Zach Edey',position:{abbreviation:'C'}},
+      {id:'11',displayName:'Quinten Post',position:{abbreviation:'C'}},
+      {id:'12',displayName:'Questionable Teammate',position:{abbreviation:'SF'}},
+      {id:'13',displayName:'Another Teammate',position:{abbreviation:'SG'}}]};
+  }
   if (url.includes('/scoreboard')) {
     if (url.includes('dates=20261106')) return {leagues:[{season:{year:2027}}], events:[slate === 'today' ? event : finishedEvent]};
     if (url.includes('dates=20261107')) return {leagues:[{season:{year:2027}}], events:[tomorrowEvent]};
@@ -123,22 +135,49 @@ async function fixtureChecks(browser, url, device) {
   await page.locator('#game').selectOption('BOS @ ATL');
   assert.equal(await page.locator('article.card').count(), 1);
   await page.locator('#game').selectOption('');
-  assert.match(await page.locator('article.card .role-impact').innerText(), /will likely get the starting nod/);
-  const roleChecks = await page.evaluate(() => {
-    const c = board()[0];
-    return [roleSummaryHTML({...c, position:'PG', roleMatches:[], roleReports:[]}),
-      roleSummaryHTML({...c, position:'PG', roleMatches:['Backup Guard (Out)'], roleReports:[]})];
+  assert.equal(await page.locator('.role-impact').count(), 0, 'No generic minutes essay');
+  const roster = page.locator('article.card details.roster');
+  assert.equal(await roster.getAttribute('open'), null);
+  assert.match(await roster.locator(':scope > summary').innerText(), /ATL 2 out/);
+  await roster.locator(':scope > summary > span').first().click();
+  await roster.locator('.roster-player.selected').first().waitFor();
+  assert.match(await roster.innerText(), /Guards/);
+  assert.match(await roster.innerText(), /Centers/);
+  assert.match(await roster.locator('.roster-player.selected').first().innerText(), /This pick/);
+  assert.match(await roster.innerText(), /Not listed/);
+  await page.evaluate(() => draw());
+  await roster.locator('.roster-player.selected').first().waitFor();
+  assert.notEqual(await roster.getAttribute('open'), null, 'Background redraw keeps roster open');
+  const unknownStatus = await page.evaluate(() => {
+    const meta = S.injuryMeta;
+    S.injuryMeta = null;
+    const html = rosterTiles([{id:'10', name:'Zach Edey', position:'C'}], '1', '1966');
+    S.injuryMeta = meta;
+    return html;
   });
-  assert.match(roleChecks[0], /does not automatically give a guard more minutes/);
-  assert.match(roleChecks[1], /Same position group: Backup Guard/);
+  assert.match(unknownStatus, /Unknown/);
+  assert.doesNotMatch(unknownStatus, /roster-status">Out/);
+  await roster.locator('.roster-team').nth(1).locator(':scope > summary').click();
   const availability = await page.locator('article.card .availability').innerText();
-  for (const text of ['Zach Edey (Out)', 'Quinten Post (Out)', 'Questionable Teammate (Questionable)',
-    'Opponent Center (Out)'])
+  for (const text of ['Zach Edey', 'Quinten Post', 'Questionable Teammate',
+    'Opponent Center'])
     assert(availability.includes(text), `Injury context must be visible without opening Stats: ${text}`);
+  await checkPhoneLayout(page, 'Expanded visual rosters');
+  await page.screenshot({path:path.join(root,'../.phone-tools/roster-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  await roster.locator(':scope > summary > span').first().click();
+  rosterDown = true;
+  await page.evaluate(() => rosterCache.clear());
+  await roster.locator(':scope > summary > span').first().click();
+  await page.waitForFunction(() => document.querySelector('.roster-body').textContent.includes('Full roster unavailable'));
+  assert.match(await roster.innerText(), /Zach Edey/);
+  await roster.locator(':scope > summary > span').first().click();
+  rosterDown = false;
+  await page.waitForFunction(() => !document.querySelector('article.card details.roster')?.open, null, {timeout:5000});
+  assert.equal(await roster.getAttribute('open'), null, 'Roster closes after retry');
   const why = page.locator('article.card .pick-why');
   assert.equal(await why.getAttribute('open'), null, 'Commentary starts collapsed');
-  await why.locator('summary').focus();
-  await page.keyboard.press('Enter');
+  await why.locator('summary').click();
+  await page.waitForFunction(() => document.querySelector('article.card .pick-why')?.open);
   for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'do not claim verified'])
     assert((await why.innerText()).includes(text), `Expanded commentary retains: ${text}`);
   assert(await why.locator('b').count() > 0, 'Explanation has skimmable emphasis');
@@ -282,14 +321,14 @@ async function fixtureChecks(browser, url, device) {
   await refresh(page);
   assert.equal(await page.evaluate(() => window.__health.ok), false);
   assert.match(await page.locator('#connection').innerText(), /Using saved data/);
-  assert.match(await page.locator('article.card .availability').innerText(), /Zach Edey \(Out\)/);
+  assert.match(await page.locator('article.card .availability').innerText(), /ATL 2 out/);
   mode = 'healthy';
   for (const payload of [{timestamp:fixedTime.toISOString(),injuries:[{id:'1'}]},
     {timestamp:'2026-11-06T16:00:00Z',injuries:[]}]) {
     injuryPayloadOverride=payload;
     await refresh(page);
     assert.equal(await page.evaluate(() => window.__health.ok),false);
-    assert.match(await page.locator('article.card .availability').innerText(), /Zach Edey \(Out\)/);
+    assert.match(await page.locator('article.card .availability').innerText(), /ATL 2 out/);
   }
   injuryPayloadOverride=null;
 
@@ -375,6 +414,9 @@ async function liveChecks(browser, url) {
       const logs=await get(LOG+'1966/gamelog');
       if (!logs || !Array.isArray(logs.seasonTypes)) throw new Error('Game log format changed');
       const event=score.events[0];
+      const teamId = event?.competitions?.[0]?.competitors?.[0]?.team?.id || '2';
+      const roster = await teamRoster(String(teamId));
+      if (!roster.length || !roster.every(p=>p.name && p.id)) throw new Error('Live roster unavailable');
       if (event) {
         const odds=await get(`${CORE}/events/${event.id}/competitions/${event.id}/odds`);
         if (odds && !Array.isArray(odds.items)) throw new Error('Odds format changed');
@@ -387,7 +429,15 @@ async function liveChecks(browser, url) {
         }
       }
     });
-    console.log(`${device}: live page, scoreboard, injuries, odds, props and game logs PASS`);
+    const rosterPanel = page.locator('article.card details.roster').first();
+    if (await rosterPanel.count()) {
+      await rosterPanel.locator(':scope > summary').click();
+      await rosterPanel.locator('.roster-player').first().waitFor();
+      assert.doesNotMatch(await rosterPanel.innerText(), /Full roster unavailable/);
+      await checkPhoneLayout(page, 'Live expanded roster');
+      await page.screenshot({path:path.join(root,'../.phone-tools/live-roster-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+    }
+    console.log(`${device}: live page, scoreboard, injuries, roster, odds, props and game logs PASS`);
     await context.close();
   }
 }
