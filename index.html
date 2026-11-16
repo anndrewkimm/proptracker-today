@@ -71,6 +71,8 @@ summary { cursor: pointer; font-weight: 600 }
 .pick-why summary { padding: 10px 0; color: var(--accent); min-height: 40px }
 .why-notes { display: grid; gap: 9px; padding: 2px 0 10px; line-height: 1.5 }
 .why-notes p { margin: 0 }
+.scenario-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; margin: 7px 0 }
+.scenario-table th, .scenario-table td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere }
 .why-notes b, .availability b, .detail b { color: var(--fg) }
 .chart { display: flex; align-items: flex-end; gap: 3px; height: 112px; position: relative; margin-top: 14px }
 .col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums }
@@ -81,7 +83,10 @@ summary { cursor: pointer; font-weight: 600 }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px }
 .mine li { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0 }
 .mine ul { list-style: none; margin: 6px 0 0; padding: 0 }
-.mine button { min-height: 30px; padding: 2px 9px; font-size: 13px }
+.mine button { min-height: 30px; padding: 2px 9px; font-size: 13px; flex-shrink: 0; white-space: nowrap }
+.mine li > span { flex: 1 }
+.role-impact { border-left: 3px solid var(--accent, #8b5cf6); background: #8b5cf612; padding: 8px 10px; margin-top: 8px; font-size: 13px; overflow-wrap: anywhere }
+.role-impact p { margin: 4px 0 }
 </style>
 </head>
 <body>
@@ -94,14 +99,14 @@ summary { cursor: pointer; font-weight: 600 }
   <div class="bar" id="barWrap" hidden><i id="bar"></i></div>
   <div class="box mine" id="mine" hidden></div>
   <input id="search" type="search" placeholder="Player or team" aria-label="Search player or team" autocomplete="off">
+  <select id="game" aria-label="Game"></select>
   <div class="chips" id="stats" role="group" aria-label="Stat"></div>
   <details class="box">
-    <summary>Filters and games</summary>
+    <summary>Filters</summary>
     <div class="filters">
       <div class="chips" id="lineTypes" role="group" aria-label="Line type"></div>
       <div class="chips" id="sides" role="group" aria-label="Side"></div>
       <div class="chips" id="sorts" role="group" aria-label="Sort"></div>
-      <select id="game" aria-label="Game"></select>
       <label><input id="best" type="checkbox" checked style="width:auto;min-height:0"> Best pick per player</label>
       <label><input id="moved" type="checkbox" style="width:auto;min-height:0"> Only moved lines</label>
       <div class="sub" id="games"></div>
@@ -110,8 +115,8 @@ summary { cursor: pointer; font-weight: 600 }
   <details class="box">
     <summary>How to read this</summary>
     <p class="sub">Picks for today's NBA games that haven't started, using DraftKings' lines. Check the PrizePicks line before you pick.
-    <b>Chance</b> is DraftKings' odds with their cut removed, adjusted for Less vs More and his last 10 games.
-    <b>Stars</b> count two signs that have beaten the odds, on new games too: a Less pick, and past the line in 6+ of his last 10.
+    <b>Chance</b> follows DraftKings' current prices with their cut removed. There is no automatic Under or old-hit-rate bonus.
+    <b>Stars</b> describe evidence: recent history/report coverage, and no detected role or line mismatch. They do not mean an extra betting edge. <b>Why this pick</b> compares the line with minutes scenarios; absences trigger review, not an automatic Over.
     <b>Standard</b> means close to a coin flip, like a regular PrizePicks line. <b>Goblin-like</b> is an easy More that would pay less. <b>Demon-like</b> is an easy Less at a line PrizePicks would make a demon, which is More only, so it probably isn't offered.
     Break-even on PrizePicks is about 54% a pick (5-6 Flex) to 58% (2-pick Power).</p>
   </details>
@@ -125,6 +130,7 @@ summary { cursor: pointer; font-weight: 600 }
     <p class="sub"><a href="https://github.com/anndrewkimm/proptracker-today/actions/workflows/pages.yml" target="_blank" rel="noopener">Check site status or recover from your phone</a>: sign in to GitHub, tap Run workflow, and choose check-only, deploy, or restore-last-good.</p>
   </details>
 </main>
+<script src="./opportunity.js"></script>
 <script>
 'use strict';
 // The web API host allows browser requests; the site.api host can reject them with 403.
@@ -143,13 +149,9 @@ const VALUE = {points: g => g.p, rebounds: g => g.r, assists: g => g.a, threes_m
   'pts+rebs+asts': g => g.p + g.r + g.a, 'pts+rebs': g => g.p + g.r, 'pts+asts': g => g.p + g.a, 'rebs+asts': g => g.r + g.a};
 const VOLUME = {points: ['fa', 'Shots'], threes_made: ['ta', '3-point attempts'], 'pts+rebs+asts': ['fa', 'Shots'], 'pts+rebs': ['fa', 'Shots'], 'pts+asts': ['fa', 'Shots']};
 // Same numbers as src/proptracker/today.py; see docs/MODEL.md for where they come from.
-const FORM_GAMES = 10, FORM_MIN = 5, GOBLIN_AT = .55, STRONG_FORM = .6, SPREAD_GAMES = 20, MAX_SIGNS = 2;
-const CHANCE = {intercept: -0.041, market: 0.871, less: 0.166, form: 0.215};  // today.py CHANCE_*, keep in step
-const chance = (market, more, formRate) => {
-  const m = Math.min(Math.max(market, .02), .98);
-  const z = CHANCE.intercept + CHANCE.market * Math.log(m / (1 - m)) + (more ? 0 : CHANCE.less) + CHANCE.form * ((formRate ?? .5) - .5);
-  return 1 / (1 + Math.exp(-z));
-};
+const FORM_GAMES = 10, FORM_MIN = 5, GOBLIN_AT = .55, SPREAD_GAMES = 20, MAX_SIGNS = 2;
+const chance = market => Math.min(Math.max(market, .02), .98);
+const TEAM_NAMES = {"ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "CLE": "Cleveland Cavaliers", "NOP": "New Orleans Pelicans", "CHI": "Chicago Bulls", "DAL": "Dallas Mavericks", "DEN": "Denver Nuggets", "GSW": "Golden State Warriors", "HOU": "Houston Rockets", "LAC": "Los Angeles Clippers", "LAL": "Los Angeles Lakers", "MIA": "Miami Heat", "MIL": "Milwaukee Bucks", "MIN": "Minnesota Timberwolves", "BKN": "Brooklyn Nets", "NYK": "New York Knicks", "ORL": "Orlando Magic", "IND": "Indiana Pacers", "PHI": "Philadelphia 76ers", "PHX": "Phoenix Suns", "POR": "Portland Trail Blazers", "SAC": "Sacramento Kings", "SAS": "San Antonio Spurs", "OKC": "Oklahoma City Thunder", "TOR": "Toronto Raptors", "UTA": "Utah Jazz", "MEM": "Memphis Grizzlies", "WAS": "Washington Wizards", "DET": "Detroit Pistons", "CHA": "Charlotte Hornets"};
 const OUT = ['Out', 'Doubtful'], LOG_HOURS = 3;
 
 const $ = id => document.getElementById(id);
@@ -226,7 +228,7 @@ const dayGap = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
 
 // --- data ----------------------------------------------------------------------------------
 const S = {games: [], props: [], athletes: {}, logs: {}, injuries: {}, injuryMeta: null, today: null, seasonYear: null, shown: 10, open: new Set(),
-  stat: 'all', side: 'All', kind: 'Standard', sort: 'Most stars', defense: {}};
+  stat: 'all', side: 'All', kind: 'Standard', sort: 'Best supported', defense: {}};
 window.__S = S;
 const SNAPSHOT_KEY = 'pt.board.v1', MAX_SNAPSHOT_AGE = 30 * 60 * 1000;
 let savedAt = null, connectionMessage = '';
@@ -307,7 +309,7 @@ async function loadAthlete(id, ref) {
   const a = await get(ref, true);
   if (!a || !a.displayName) throw new Error('Player details unavailable');
   const team = ((a.team || {}).$ref || '').match(/teams\/(\d+)/);
-  S.athletes[id] = {t: Date.now(), name: a.displayName, team: a.team?.id != null ? String(a.team.id) : team ? team[1] : null};
+  S.athletes[id] = {t: Date.now(), name: a.displayName, position: a.position?.abbreviation || '', team: a.team?.id != null ? String(a.team.id) : team ? team[1] : null};
   store.set(key, S.athletes[id]);
 }
 async function loadInjuries() {
@@ -324,7 +326,7 @@ async function loadInjuries() {
       if (!name || typeof i.status !== 'string' || !i.status.trim()) throw new Error('Incomplete player injury data');
       const link = (a.links || []).map(l => l.href || '').join(' ').match(/\/id\/(\d+)/);
       const status = i.status.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-      out[name] = {id: a.id != null ? String(a.id) : link?.[1], name, status, team: String(team.id),
+      out[name] = {position: a.position?.abbreviation || '', id: a.id != null ? String(a.id) : link?.[1], name, status, team: String(team.id),
         text: i.shortComment || '', report: i.longComment || '', reportedAt: i.date || null};
     }
   }
@@ -452,11 +454,10 @@ function candidate(prop) {
     c.stdSide = there >= .5 ? 'more' : 'less'; c.stdChance = there >= .5 ? there : 1 - there;
   }
   c.signs = [];
-  if (!more) c.signs.push('Less pick');
-  if (c.formRate != null && c.formRate >= STRONG_FORM) c.signs.push(`${more ? 'Over' : 'Under'} in ${c.formHits} of last ${c.formGames}`);
   const def = opp && (S.defense[stat] || {})[opp.code];
   if (def) c.def = def;
-  c.mates = [];
+  c.mates = []; c.roleMatches = []; c.position = a.position || '';
+  const positionGroup = p => /G/.test(p) ? 'guard' : /C/.test(p) ? 'center' : /F/.test(p) ? 'forward' : null;
   c.oppsOut = [];
   c.teamStatuses = []; c.opponentStatuses = []; c.roleReports = [];
   for (const [name, i] of Object.entries(S.injuries)) {
@@ -467,9 +468,14 @@ function candidate(prop) {
     if (sameTeam && i.report?.includes(a.name) && Date.now() - Date.parse(i.reportedAt) < 2 * 864e5)
       c.roleReports.push(`ESPN report (${i.reportedAt}): ${i.report}`);
     if (!OUT.includes(i.status) || name === a.name) continue;
+    if (sameTeam && positionGroup(c.position) && positionGroup(c.position) === positionGroup(i.position)) c.roleMatches.push(`${name} (${i.status})`);
     if (sameTeam) c.mates.push(`${name} (${i.status})`);
     if (otherTeam) c.oppsOut.push(`${name} (${i.status})`);
   }
+  c.opportunity = Opportunity.analyze(line, c.side, log.filter(g=>g.cur).map(g=>({d:g.d,m:g.m,v:val(g)})), S.today,
+    {absences:c.mates.length,role_report:!!c.roleReports.length,injury:!!c.injury,coverage:!!team&&!!opp&&injuriesReady()});
+  if(c.opportunity.games>=10&&!c.opportunity.flags.includes('coverage'))c.signs.push('Recent history and report coverage');
+  if(!c.opportunity.review)c.signs.push('No detected role or line mismatch');
   return c;
 }
 function availabilityNotes(c) {
@@ -480,18 +486,42 @@ function availabilityNotes(c) {
   if (!c.team || !c.opp) notes.push('Team assignment unavailable; injury coverage cannot be matched reliably.');
   if (S.injuryMeta) notes.push(`ESPN injury feed as of ${new Date(S.injuryMeta.sourceTime).toLocaleString()}. Current statuses; game-day starting lineup unverified.`);
   else notes.push('Injury coverage unavailable.');
-  if (c.mates?.length || c.roleReports?.length) notes.push('Role-change caution: chance uses market odds and recent form. It does not explicitly adjust for a new starter or changed minutes; a Less pick can be vulnerable if his role grows.');
+  if (c.mates?.length || c.roleReports?.length) notes.push('Role-change caution: chance follows current market odds. Opportunity scenarios show what different minutes could mean; they do not claim verified playing time or an extra betting edge.');
   if (!c.teamStatuses?.length && !c.opponentStatuses?.length) notes.push('No matched injury entries is not confirmation that everyone will play.');
   return notes;
+}
+function roleSummaryHTML(c) {
+  if (!c.mates?.length && !c.roleReports?.length) return '';
+  const reports = (c.roleReports || []).map(n => `<p>${skimText(n)}</p>`).join('');
+  const relevance = c.roleMatches?.length
+    ? `Same position group: ${c.roleMatches.join(', ')}. Potential rotation opening; replacement order and extra minutes are unconfirmed.`
+    : 'No direct replacement role confirmed. A big being out does not automatically give a guard more minutes; position alone does not establish the rotation.';
+  return `<div class="role-impact"><b>Minutes watch${c.position ? ' · ' + esc(c.position) : ''}</b><p>${esc(relevance)}</p>${reports}<div class="sub">Minutes and touches can change separately. Chance is not boosted for these absences.</div></div>`;
 }
 function availabilityHTML(c) {
   const notes = availabilityNotes(c);
   const statuses = notes.filter(n => n.startsWith(`${c.team}:`) || n.startsWith(`${c.opp}:`));
-  return `<div class="availability sub">${statuses.map(n => `<div>${skimText(n)}</div>`).join('')}</div>
-    <details class="pick-why"><summary>Why this pick</summary><div class="why-notes">
+  return `<div class="availability sub">${statuses.map(n => `<div>${skimText(n)}</div>`).join('')}</div>${roleSummaryHTML(c)}
+    <details class="pick-why"><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
+    ${opportunityHTML(c)}
     ${tagReasons(c).map(([label, helps, why]) => `<p><b>${esc(label)}</b> <span class="${helps === null ? '' : helps ? 'green' : 'red'}">${helps === null ? 'Context' : helps ? 'Helps' : 'Caution'}</span><br>${skimText(why)}</p>`).join('')}
     ${notes.filter(n => !statuses.includes(n)).map(n => `<p>${skimText(n)}</p>`).join('')}
     </div></details>`;
+}
+function opportunityHTML(c) {
+  const a=c.opportunity;
+  if(!a)return '';
+  const rows=a.scenarios.map(s=>`<tr><td>${s.minutes} min</td><td>${s.production}</td><td>${s.hits}/${s.games}${s.pushes?` · ${s.pushes} push`:''}</td></tr>`).join('');
+  const context=[];
+  if(c.volume)context.push(`Shot volume: ${c.volume[0]}, ${c.volume[1]} per game recently vs ${c.volume[2]} this season. More minutes and a higher shot rate are different drivers.`);
+  if(c.total!=null||c.spread!=null)context.push(`Game environment: total ${c.total??'unknown'}, team spread ${c.spread??'unknown'}. A high total can reflect scoring efficiency or pace; a large spread adds playing-time uncertainty.`);
+  if(c.def)context.push(`Matchup sample: ${c.opp}, ${c.def.n} observations; players averaged ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff>=0?'more':'fewer'} ${STAT_NAME[c.stat]} than usual. Historical matchup evidence can change with the lineups.`);
+  if(c.oppsOut?.length)context.push(`Opponent absences: ${c.oppsOut.join(', ')}. Defensive personnel may differ from those past games.`);
+  context.push(...rotationEvidence(c).slice(1).filter(n=>!n.startsWith('Rotation and workload')));
+  context.push(...(window.lineContextNotes?.(c)||[]));
+  return Opportunity.notes(a,c.line,c.side).map(n=>`<p>${skimText(n)}</p>`).join('')+
+    context.map(n=>`<p>${skimText(n)}</p>`).join('')+
+    (rows?`<div><b>Minutes scenarios</b><table class="scenario-table"><thead><tr><th>If he plays</th><th>At recent rate</th><th>${c.side==='more'?'Over':'Under'} in similar minutes</th></tr></thead><tbody>${rows}</tbody></table><p class="sub">Games within 3 minutes, this season. 0/0 means no comparisons. These are scenarios, not forecasts or hit probabilities. Teammates and usage may differ; historical team membership is unavailable in this feed.</p></div>`:'');
 }
 // Escape every text segment before adding emphasis; preserve apostrophes/entities.
 function skimText(text) {
@@ -518,7 +548,7 @@ function tagReasons(c) {
     const lead = c.spread < 0 ? `${team} are favored by ${Math.abs(c.spread)}` : `${team} are ${c.spread}-point underdogs`;
     out.push(['Blowout risk', !more, `${lead}. If it gets lopsided, starters can sit the 4th quarter` + helpsLess]);
   }
-  if (c.formRate != null && c.formRate < c.market - .15) out.push(['Form disagrees', false, `The odds like this, but he went ${word} in only ${c.formHits} of his last ${c.formGames}.`]);
+  if (c.formRate != null && c.formRate < c.market - .15) out.push(['History differs', null, `Went ${word} in ${c.formHits} of his last ${c.formGames}. The current price can reflect different minutes or usage; this is not automatically evidence against the market.`]);
   if (c.def && c.def.of >= 15) {
     const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
     if (soft || tough) {
@@ -550,6 +580,7 @@ function factors(c) {
     const hits = c.vsOpp.filter(v => more ? v > c.line : v < c.line).length;
     out.push([hits / c.vsOpp.length >= .5, `vs ${c.opp}: ${word} in ${hits} of his last ${c.vsOpp.length} (${c.vsOpp.join(', ')}).`]);
   }
+  if(c.opportunity?.review)for(let i=1;i<out.length;i++)out[i]=[null,out[i][1]+' Historical context; role/line comparability needs review.'];
   if (c.def && c.def.of >= 15) {
     const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
     out.push([soft || tough ? soft === more : null, `Against ${c.opp}, players get ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff >= 0 ? 'more' : 'fewer'} ${label} than their average (${ordinal(c.def.rank)} of ${c.def.of}).`]);
@@ -620,8 +651,8 @@ function detail(c, all) {
   const f = factors(c), others = all.filter(o => o.id === c.id && o.stat !== c.stat).sort((a, b) => b.score - a.score);
   const why = tagReasons(c);
   return `<div class="detail">
-    <div class="sub"><b>${c.signs.length} of ${MAX_SIGNS} strong signs:</b> ${esc(c.signs.join(' · ') || 'none')}. Market ${Math.round(c.market * 100)}% · DK ${c.price > 0 ? '+' : ''}${c.price}.</div>
-    ${why.length ? `<ul>${why.map(([t, h, w]) => `<li><span class="${h === null ? '' : h ? 'green' : 'red'}">●</span> <b>${esc(t)}:</b> ${esc(w)}</li>`).join('')}</ul>` : ''}
+    <div class="sub"><b>${c.signs.length} of ${MAX_SIGNS} evidence checks:</b> ${esc(c.signs.join(' · ') || 'none')}. Market ${Math.round(c.market * 100)}% · DK ${c.price > 0 ? '+' : ''}${c.price}.</div>
+    ${why.length ? `<ul>${why.map(([t, h, w]) => `<li><span class="${h === null ? '' : h ? 'green' : 'red'}">●</span> <b>${esc(t)}:</b> ${skimText(w)}</li>`).join('')}</ul>` : ''}
     <div><h3>For this pick</h3>${list(f.filter(r => r[0] === true), '✓', 'green')}</div>
     <div><h3>Against it</h3>${list(f.filter(r => r[0] === false), '✗', 'red')}</div>
     ${f.some(r => r[0] === null) ? `<div><h3>Also</h3>${list(f.filter(r => r[0] === null), '•', '')}</div>` : ''}
@@ -640,7 +671,7 @@ function card(c, all, chosen) {
     <div class="top">
       <div class="photo">${initials}<img alt="" loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${esc(c.id)}.png"></div>
       <div class="who"><strong>${esc(c.name)}</strong><div class="sub">${esc(c.team || '?')} ${c.isHome ? 'vs' : '@'} ${esc(c.opp || '?')} · ${esc(form)}</div><div class="pick">${esc(pickText(c))}</div></div>
-      <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} strong signs">${stars(c)}</span></div>
+      <div class="rate"><b class="${ink}">${Math.round(c.score * 100)}%</b><span class="stars" aria-label="${c.signs.length} of ${MAX_SIGNS} evidence checks">${stars(c)}</span></div>
     </div>
     <div class="tags">${kindTag(c)}${window.lineUsualHTML?.(c)||''}${pills}</div>${std}${availabilityHTML(c)}${window.lineMovementHTML?.(c)||''}
     <div class="row"><button type="button" data-open="${esc(k)}">${open ? 'Hide stats' : 'Stats'}</button><button type="button" data-add="${esc(k)}" class="${chosen[k] ? 'on' : ''}">${chosen[k] ? 'Added' : '+ Add'}</button></div>
@@ -667,12 +698,12 @@ function draw() {
   window.__board = all;
   const chosen = mine(), q = $('search').value.trim().toLowerCase(), game = $('game').value;
   const kinds = {Standard: 'standard', 'Goblin-like': 'goblin', 'Demon-like': 'demon'};
-  let picks = all.filter(c => (!q || `${c.name} ${c.team || ''}`.toLowerCase().includes(q)) && (!game || c.matchup === game)
+  let picks = all.filter(c => (!q || `${c.name} ${c.team || ''} ${TEAM_NAMES[c.team] || ''}`.toLowerCase().includes(q)) && (!game || c.matchup === game)
     && (S.stat === 'all' || c.stat === S.stat) && (S.side === 'All' || c.side === S.side.toLowerCase())
     && (S.kind === 'All lines' || c.kind === kinds[S.kind]));
   const movedOnly = $('moved').checked;  // before best-per-player and the top-N cut
   if (movedOnly) picks = picks.filter(c => window.lineMoved?.(c));
-  if (S.sort === 'Most stars') picks = picks.map((c, i) => [c, i]).sort((a, b) => b[0].signs.length - a[0].signs.length || a[1] - b[1]).map(x => x[0]);
+  if (S.sort === 'Best supported') picks.sort((a,b)=>b.signs.length-a.signs.length||b.score-a.score);
   if ($('best').checked) { const once = new Set(); picks = picks.filter(c => !once.has(c.id) && once.add(c.id)); }
   const total = picks.length;
   $('list').innerHTML = picks.slice(0, S.shown).map(c => card(c, all, chosen)).join('') || `<div class="empty">${!injuriesReady() ? 'Picks are withheld until current injury coverage is verified. Tap Refresh to retry.' : S.props.length ? (movedOnly ? 'No lines have moved among the picks matching these filters. A line counts once it differs from the first one observed.' : 'No picks match these filters.') : 'No lines posted for games still to start today. Check back closer to tip-off.'}</div>`;
@@ -691,10 +722,10 @@ function drawAll() {
   chips($('stats'), stats, () => S.stat, v => { S.stat = v; }, v => v === 'all' ? 'All stats' : STAT_NAME[v]);
   chips($('lineTypes'), ['Standard', 'Goblin-like', 'Demon-like', 'All lines'], () => S.kind, v => { S.kind = v; });
   chips($('sides'), ['All', 'More', 'Less'], () => S.side, v => { S.side = v; });
-  chips($('sorts'), ['Most stars', 'Highest chance'], () => S.sort, v => { S.sort = v; });
+  chips($('sorts'), ['Best supported', 'Highest chance'], () => S.sort, v => { S.sort = v; });
   const current = $('game').value;
   const list = [...S.games].sort((a, b) => a.tip < b.tip ? -1 : 1);
-  $('game').innerHTML = '<option value="">All games</option>' + list.map(g => `<option ${g.matchup === current ? 'selected' : ''} value="${esc(g.matchup)}">${esc(g.matchup)}</option>`).join('');
+  $('game').innerHTML = '<option value="">All games</option>' + list.map(g => `<option ${g.matchup === current ? 'selected' : ''} value="${esc(g.matchup)}">${esc((TEAM_NAMES[g.away.code] || g.away.code) + ' @ ' + (TEAM_NAMES[g.home.code] || g.home.code))}</option>`).join('');
   $('games').innerHTML = list.map(g => {
     const fav = g.spread == null ? '' : g.spread === 0 ? " · pick'em" : g.spread < 0 ? ` · ${g.home.code} ${g.spread}` : ` · ${g.away.code} -${g.spread}`;
     const when = new Date(g.tip).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});

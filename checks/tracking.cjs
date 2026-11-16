@@ -27,6 +27,13 @@ test('injury context is frozen with the pick, never replaced by later reports',(
   assert.deepEqual(s.days[input.day].picks[0].availability,availability);
   assert.equal(s.days[input.day].picks[0].injuryCheckedAt,now);
 });
+test('opportunity model and evidence stay frozen across later collections',()=>{
+  const opportunity={version:'market-opportunity-v2',review:true,flags:['availability'],scenarios:[]};
+  const state=observe(empty(),{...input,picks:[{...p,opportunity}]},now);
+  assert.equal(state.days[input.day].model,'market-opportunity-v2');
+  observe(state,{...input,picks:[{...p,opportunity:{...opportunity,review:false}}]},'2026-11-11T23:30:00Z');
+  assert.deepEqual(state.days[input.day].picks[0].opportunity,opportunity);
+});
 test('one player, standard lines only, ties stable',()=>{
   const s=observe(empty(),{...input,picks:[p,{...p,stat:'rebounds'},{...p,id:'2',kind:'goblin'}]},now);
   assert.equal(s.days[input.day].picks.length,1);

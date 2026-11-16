@@ -1,7 +1,7 @@
 'use strict';
 // Public recommendations only. Never import the desktop database or personal slips.
-const MODEL = 'phone-chance-v1';
-const POLICY = 'standard-stars-chance-one-player-v1';
+const MODEL = 'market-opportunity-v2';
+const POLICY = 'standard-evidence-market-one-player-v2';
 const identity = p => `${p.event}|${p.id}|${p.stat}`;
 function empty() { return {version:1, updatedAt:null, days:{}, movement:{}}; }
 function ranked(picks) {

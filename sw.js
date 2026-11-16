@@ -1,8 +1,8 @@
 // Cache only this app's shell. ESPN data is never silently served from this cache.
-const CACHE = 'proptracker-shell-v6';
+const CACHE = 'proptracker-shell-v8';
 const HOME = new URL('./', self.location.href).href;
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([HOME, new URL('insights.js',HOME).href])).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([HOME, new URL('insights.js',HOME).href, new URL('opportunity.js',HOME).href])).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
@@ -18,7 +18,7 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  if (url.origin === self.location.origin && url.pathname === new URL('insights.js',HOME).pathname) {
+  if (url.origin === self.location.origin && ['insights.js','opportunity.js'].some(file=>url.pathname === new URL(file,HOME).pathname)) {
     event.respondWith(caches.open(CACHE).then(async cache => {
       try {
         const response = await fetch(event.request);

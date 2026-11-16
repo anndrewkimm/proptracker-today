@@ -16,7 +16,7 @@ async function json(url) {
   const state=fs.existsSync(output)?JSON.parse(fs.readFileSync(output,'utf8')):empty();
   const server=http.createServer((req,res)=>{
     const name=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html';
-    if (!['index.html','insights.js','sw.js'].includes(name)) {res.writeHead(404);res.end();return;}
+    if (!['index.html','insights.js','opportunity.js','sw.js'].includes(name)) {res.writeHead(404);res.end();return;}
     res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':'text/html; charset=utf-8');
     res.end(fs.readFileSync(path.join(__dirname,name)));
   });
@@ -42,7 +42,7 @@ async function json(url) {
         return {id:c.id,event:p.game.id,tip:p.game.tip,name:c.name,stat:c.stat,line:c.line,side:c.side,
           score:c.score,market:c.market,kind:c.kind,loaded:c.loaded,signs:c.signs,over:p.over,under:p.under,
           matchup:c.matchup,formHits:c.formHits,formGames:c.formGames,
-          availability:availabilityNotes(c),injuryCheckedAt:S.injuryMeta?.fetchedAt};
+          opportunity:c.opportunity,model:Opportunity.VERSION,availability:availabilityNotes(c),injuryCheckedAt:S.injuryMeta?.fetchedAt};
       })}));
     if (!input.day || !Array.isArray(input.events)) throw Error('No valid slate');
     const imminent=input.events.some(e=>Date.parse(e.tip)>Date.now() && Date.parse(e.tip)-Date.now()<=90*60000);

@@ -111,6 +111,26 @@ async function fixtureChecks(browser, url, device) {
   await finished(page);
   assert.equal(await page.evaluate(() => window.__health.ok), true, JSON.stringify(await page.evaluate(() => window.__health)));
   assert.equal(await page.locator('article.card').count(), 1, 'A real pick card must render');
+  assert(await page.locator('#game').isVisible(), 'Game selector is visible with filters closed');
+  for (const query of ['Atlanta', 'Hawks', 'ATL']) {
+    await page.locator('#search').fill(query);
+    assert.equal(await page.locator('article.card').count(), 1, `Team search: ${query}`);
+  }
+  await page.locator('#search').fill('Celtics');
+  assert.equal(await page.locator('article.card').count(), 0, 'Team search excludes opponent picks');
+  await page.locator('#search').fill('');
+  assert.match(await page.locator('#game').innerText(), /Boston Celtics/);
+  await page.locator('#game').selectOption('BOS @ ATL');
+  assert.equal(await page.locator('article.card').count(), 1);
+  await page.locator('#game').selectOption('');
+  assert.match(await page.locator('article.card .role-impact').innerText(), /will likely get the starting nod/);
+  const roleChecks = await page.evaluate(() => {
+    const c = board()[0];
+    return [roleSummaryHTML({...c, position:'PG', roleMatches:[], roleReports:[]}),
+      roleSummaryHTML({...c, position:'PG', roleMatches:['Backup Guard (Out)'], roleReports:[]})];
+  });
+  assert.match(roleChecks[0], /does not automatically give a guard more minutes/);
+  assert.match(roleChecks[1], /Same position group: Backup Guard/);
   const availability = await page.locator('article.card .availability').innerText();
   for (const text of ['Zach Edey (Out)', 'Quinten Post (Out)', 'Questionable Teammate (Questionable)',
     'Opponent Center (Out)'])
@@ -119,7 +139,7 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await why.getAttribute('open'), null, 'Commentary starts collapsed');
   await why.locator('summary').focus();
   await page.keyboard.press('Enter');
-  for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'does not explicitly adjust'])
+  for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'do not claim verified'])
     assert((await why.innerText()).includes(text), `Expanded commentary retains: ${text}`);
   assert(await why.locator('b').count() > 0, 'Explanation has skimmable emphasis');
   await checkPhoneLayout(page, 'expanded pick explanation');
@@ -144,9 +164,9 @@ async function fixtureChecks(browser, url, device) {
   });
   assert.deepEqual(checks,{excludedByName:true,excludedById:true,staleHidden:true});
   await checkPhoneLayout(page, 'Today');
-  await page.getByText('Filters and games', {exact:true}).click();
+  await page.getByText('Filters', {exact:true}).click();
   await checkPhoneLayout(page, 'Expanded filters');
-  await page.getByText('Filters and games', {exact:true}).click();
+  await page.getByText('Filters', {exact:true}).click();
   await page.getByRole('button',{name:'Daily record',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('record-summary')?.textContent.includes('1/1'));
   assert.match(await page.locator('#record-summary').textContent(), /market baseline 52.0%/);
@@ -219,6 +239,21 @@ async function fixtureChecks(browser, url, device) {
       p:20+i,r:10,a:5,tm:3,s:1,b:2,m:30,fa:15,ta:6,cur:true,o:'BOS',h:true}));
     draw();
   });
+  const opportunity = await page.evaluate(() => {
+    const c=board()[0];
+    return {score:c.score,market:c.market,analysis:c.opportunity,signs:c.signs,
+      html:skimText("Nae'Qwan <script>30</script>")};
+  });
+  assert.equal(opportunity.score,opportunity.market,'Old hit rates and side never add a probability bonus');
+  assert(opportunity.analysis.review,'Listed absences require role review');
+  assert(!opportunity.signs.includes('Less pick'));
+  assert(opportunity.html.includes('&#39;')&&!opportunity.html.includes('<script>'));
+  await page.locator('article.card .pick-why summary').click();
+  assert(await page.locator('article.card .scenario-table tbody tr').count()>0);
+  assert.match(await page.locator('article.card .pick-why').innerText(),/not forecasts or hit probabilities/);
+  await checkPhoneLayout(page,'Minutes scenarios with populated history');
+  await page.screenshot({path:path.join(root,'../.phone-tools/opportunity-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
+  await page.locator('article.card .pick-why summary').click();
   await page.locator('[data-open]').first().click();
   assert.equal(await page.locator('.detail').count(), 1);
   assert.equal(await page.locator('.chart .col').count(), 10, 'Expanded stats must test populated game charts');
@@ -364,7 +399,7 @@ async function liveChecks(browser, url) {
     else {
       server = http.createServer((req,res) => {
         const pathname = new URL(req.url,'http://localhost').pathname;
-        const file = pathname === '/sw.js' ? 'sw.js' : pathname === '/insights.js' ? 'insights.js' : 'index.html';
+        const file = pathname === '/sw.js' ? 'sw.js' : pathname === '/insights.js' ? 'insights.js' : pathname === '/opportunity.js' ? 'opportunity.js' : 'index.html';
         res.writeHead(200, {'Content-Type':file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'});
         res.end(fs.readFileSync(path.join(root,file)));
       });

@@ -45,7 +45,7 @@ jobs:
       - name: Package only public app files
         run: |
           mkdir _site
-          cp index.html sw.js insights.js _site/
+          cp index.html sw.js insights.js opportunity.js _site/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

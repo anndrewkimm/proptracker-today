@@ -45,7 +45,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     <div id="record-metrics" class="record-metrics"></div><div id="record-stars" class="record-stars"></div>
     <details><summary>Accuracy details</summary><p id="record-summary" class="sub"></p></details>
     <label class="sub" for="record-day">Game day</label><select id="record-day"></select><div id="record-days"></div>
-    <details style="margin-top:20px"><summary>How daily tracking works</summary><p class="sub">Standard DraftKings lines, most stars then chance, one pick per player, up to 20. Selections lock on the first complete collection in the 90 minutes before the first tip-off. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented. These are not verified PrizePicks offers or profit results.</p></details></div>
+    <details style="margin-top:20px"><summary>How daily tracking works</summary><p class="sub">Standard DraftKings lines, evidence coverage then market chance (v2; older selections retain their original model), one pick per player, up to 20. Selections lock on the first complete collection in the 90 minutes before the first tip-off. Changing top X only changes the results you view. Missed collections are labeled; historical picks are never invented. These are not verified PrizePicks offers or profit results.</p></details></div>
     <div id="moves-view" hidden><h2 class="tracking-title">Follow the line</h2><p class="sub">See what changed before you pick. First observed → latest observed.</p>
     <div class="record-controls"><label>Player<input id="move-search" type="search" placeholder="Find a player"></label><label>Period<select id="move-period"><option value="today">Today's board</option><option value="all">Last 30 days</option></select></label></div>
     <label class="sub"><input id="move-returned" type="checkbox" style="width:auto;min-height:0"> Include lines that moved and came back</label>
@@ -88,7 +88,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     const all=allHistories(), first=h[0], last=h.at(-1), down=last.line<first.line, way=down?'down':'up', [event,athlete]=parts(key), out=[];
     const held=h.slice(0,h.findIndex(p=>p.line!==first.line));
     const start=overChance(first), before=held.length>1?overChance(held.at(-1)):null;
-    if(start!=null&&before!=null&&(down?start-before:before-start)>=.02)out.push(`Before the number changed, the ${down?'Under':'Over'} was already getting more expensive at ${first.line} (Over chance ${pct(start)} → ${pct(before)}): money was coming in on that side.`);
+    if(start!=null&&before!=null&&(down?start-before:before-start)>=.02)out.push(`Before the number changed, the ${down?'Under':'Over'} was already getting more expensive at ${first.line} (Over chance ${pct(start)} → ${pct(before)}): the price shifted toward that side; bet volume and the cause are not available.`);
     const now=overChance(last);
     if(now!=null){
       const lean=(down?now<.48:now>.52)?'still leans '+(down?'Under':'Over'):(down?now>.52:now<.48)?'now leans '+(down?'Over':'Under'):'is close to even';
@@ -138,9 +138,15 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   const keyFor=c=>{const p=propFor(c);return p?`${p.game.id}|${c.id}|${c.stat}`:null;};
   const historyFor=c=>allHistories()[keyFor(c)]||[];
   const labelFor=c=>{const p=propFor(c);return p?lineLabel(c.line,usual(keyFor(c),Date.parse(p.game.tip))):null;};
+  window.lineContextNotes=c=>{
+    const h=historyFor(c), label=labelFor(c), out=[];
+    if(label)out.push(label.why);
+    if(netMove(h))out.push(...clues(keyFor(c),h,c), 'Movement timing is observed, not the exact change time; these clues do not establish the cause.');
+    return out;
+  };
   window.lineMoved=c=>netMove(historyFor(c));
   // 'Low line · usual 11.5': green when it favors the pick's side, red when it works against it.
-  window.lineUsualHTML=c=>{const l=labelFor(c);return l?`<span class="tag ${l.low===(c.side==='more')?'good':'bad'}" title="${esc(l.why)}">${esc(l.text)}</span>`:'';};
+  window.lineUsualHTML=c=>{const l=labelFor(c);return l?`<span class="tag" title="${esc(l.why)}">${esc(l.text)}</span>`:'';};
   window.lineMovementHTML=c=>{
     const h=historyFor(c);if(!netMove(h))return '';
     return `<details class="movement-strip"><summary>DK line ${esc(moveText(h,STAT_NAME[c.stat]))}</summary>${timeline(h,c,keyFor(c),labelFor(c))}</details>`;
@@ -172,7 +178,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
   function renderDays(){
     const date=el('record-day').value,d=archive?.days?.[date],x=Number(el('record-x').value);
     el('record-days').innerHTML=!d?'<div class="empty">No selections recorded in this period yet. Past picks are never invented.</div>':d.status==='missed'?`<div class="empty">Missed collection · ${esc(d.reason||'No complete board before tip-off')}</div>`:
-      `<p class="sub">Locked ${esc(time(d.at))} · ${esc(d.source)}</p><div class="record-grid">${d.picks.slice(0,x).map(p=>`<article class="result-card"><div class="result-head">${photo(p.name,p.id)}<div><b>#${p.rank} ${esc(p.name)}</b><div class="sub">${esc(p.matchup||'')}</div><div>${esc(p.side==='more'?'More':'Less')} <b>${p.line}</b> ${esc(STAT_NAME[p.stat])}</div></div></div><div class="result-bottom"><span class="result-badge ${esc(p.result||'')}">${esc(p.result==='hit'?'✓ Hit':p.result==='miss'?'✕ Miss':p.result||'Pending')}${p.actual!=null?` · ${p.actual}`:''}</span><span class="sub">${percent(p.score)} predicted <span class="stars">${'★'.repeat(p.signs?.length||0)}</span></span></div></article>`).join('')}</div>`;
+      `<p class="sub">Locked ${esc(time(d.at))} · ${esc(d.source)} · ${esc(d.model||'Legacy model')}</p><div class="record-grid">${d.picks.slice(0,x).map(p=>`<article class="result-card"><div class="result-head">${photo(p.name,p.id)}<div><b>#${p.rank} ${esc(p.name)}</b><div class="sub">${esc(p.matchup||'')}</div><div>${esc(p.side==='more'?'More':'Less')} <b>${p.line}</b> ${esc(STAT_NAME[p.stat])}</div></div></div><div class="result-bottom"><span class="result-badge ${esc(p.result||'')}">${esc(p.result==='hit'?'✓ Hit':p.result==='miss'?'✕ Miss':p.result||'Pending')}${p.actual!=null?` · ${p.actual}`:''}</span><span class="sub">${percent(p.score)} predicted <span class="stars">${'★'.repeat(p.signs?.length||0)}</span></span></div></article>`).join('')}</div>`;
   }
   function renderMoves(){
     const q=el('move-search').value.toLowerCase(), todayOnly=el('move-period').value==='today';
@@ -231,7 +237,7 @@ if (!new URLSearchParams(location.search).has('collector')) (() => {
     const history=Object.entries(archive?.days||{}).sort(([a],[b])=>b.localeCompare(a))
       .flatMap(([date,d])=>d.picks.map(p=>({...p,date}))).filter(p=>mentions(p.name));
     const facts=[recordText(x)];
-    for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''} ${availabilityNotes(c).join(' ')}`);
+    for (const c of (named.length?named:current).slice(0,5)) facts.push(`${c.name}: ${c.side} ${c.line} ${STAT_NAME[c.stat]}, DraftKings via ESPN. Predicted ${percent(c.score)}, market ${percent(c.market)}. Recent form ${c.formHits}/${c.formGames}. Signs: ${c.signs.join(', ')||'none'}. ${c.injury?`Status: ${c.injury}.`:''} ${availabilityNotes(c).join(' ')} ${c.opportunity?Opportunity.notes(c.opportunity,c.line,c.side).join(' '):''}`);
     for (const p of history.slice(0,8)) facts.push(`Recorded ${p.date}, rank ${p.rank}: ${p.name}, ${p.side} ${p.line} ${STAT_NAME[p.stat]}. Predicted ${percent(p.score)}. Result: ${p.result||'pending'}; actual ${p.actual??'not available'}. DraftKings line frozen before tip-off. Injury context at selection: ${p.availability?.join(' ')||'not captured for this older pick'}`);
     if (/line|mov|chang/.test(q)) {
       const observed=Object.values(allHistories()).filter(netMove);
