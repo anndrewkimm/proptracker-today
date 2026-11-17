@@ -169,7 +169,11 @@ async function fixtureChecks(browser, url, device) {
   await page.evaluate(() => rosterCache.clear());
   await roster.locator(':scope > summary > span').first().click();
   await page.waitForFunction(() => document.querySelector('.roster-body').textContent.includes('Full roster unavailable'));
-  assert.match(await roster.innerText(), /Zach Edey/);
+  // A background redraw can rebuild the open roster right here; its tiles reload a moment later.
+  await page.waitForFunction(() => { const r = document.querySelector('article.card details.roster');
+    return r.open && r.querySelector('.roster-body').textContent.includes('Full roster unavailable') && r.innerText.includes('Zach Edey'); },
+    null, {timeout:5000}).catch(async () => assert.fail('Fallback tiles missing: ' + await page.evaluate(() => {
+      const r = document.querySelector('article.card details.roster'); return JSON.stringify({open:r.open, body:r.querySelector('.roster-body').innerHTML.slice(0,200)}); })));
   await roster.locator(':scope > summary > span').first().click();
   rosterDown = false;
   await page.waitForFunction(() => !document.querySelector('article.card details.roster')?.open, null, {timeout:5000});
@@ -178,6 +182,8 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await why.getAttribute('open'), null, 'Commentary starts collapsed');
   await why.locator('summary').click();
   await page.waitForFunction(() => document.querySelector('article.card .pick-why')?.open);
+  await page.evaluate(() => draw());
+  assert.notEqual(await why.getAttribute('open'), null, 'Background redraw keeps explanation open');
   for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'do not claim verified'])
     assert((await why.innerText()).includes(text), `Expanded commentary retains: ${text}`);
   assert(await why.locator('b').count() > 0, 'Explanation has skimmable emphasis');

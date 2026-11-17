@@ -560,15 +560,14 @@ function availabilitySummary(c) {
     return `<span><b>${esc(t.code)}</b> ${out ? `<span class="red">${out} out</span>` : '0 out'}${uncertain ? ` · ${uncertain} uncertain` : ''}</span>`;
   }).join('');
   const rosterKey = `${S.today}|${c.matchup}|${c.id}`;
-  return `<details class="availability roster" data-roster-key="${esc(rosterKey)}" ${openRosters.has(rosterKey) ? 'open' : ''} data-teams="${esc(teams.map(t=>t.id).join(','))}" data-player="${esc(c.id)}">
+  return `<details class="availability roster" data-disclosure-key="${esc(rosterKey)}" ${openRosters.has(rosterKey) ? 'open' : ''} data-teams="${esc(teams.map(t=>t.id).join(','))}" data-player="${esc(c.id)}">
     <summary><span>Roster & injuries</span><span class="availability-counts">${counts}</span></summary>
     <div class="roster-body" aria-live="polite"></div></details>`;
 }
 document.addEventListener('toggle', async e => {
   const el = e.target;
   if (!el.matches?.('details.roster') || !el.isConnected) return;
-  if (!el.open) { openRosters.delete(el.dataset.rosterKey); return; }
-  openRosters.add(el.dataset.rosterKey);
+  if (!el.open) return;
   const body = el.querySelector('.roster-body');
   body.innerHTML = '<p class="sub">Loading rosters…</p>';
   const teams = el.dataset.teams.split(',');
@@ -587,7 +586,7 @@ function availabilityHTML(c) {
   const notes = availabilityNotes(c);
   const statuses = notes.filter(n => n.startsWith(`${c.team}:`) || n.startsWith(`${c.opp}:`));
   return `${availabilitySummary(c)}
-    <details class="pick-why"><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
+    <details class="pick-why" data-disclosure-key="why-${esc(key(c))}" ${openRosters.has('why-'+key(c)) ? 'open' : ''}><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
     ${opportunityHTML(c)}
     ${tagReasons(c).map(([label, helps, why]) => `<p><b>${esc(label)}</b> <span class="${helps === null ? '' : helps ? 'green' : 'red'}">${helps === null ? 'Context' : helps ? 'Helps' : 'Caution'}</span><br>${skimText(why)}</p>`).join('')}
     ${notes.filter(n => !statuses.includes(n)).map(n => `<p>${skimText(n)}</p>`).join('')}
@@ -899,6 +898,14 @@ $('best').onchange = () => { S.shown = 10; draw(); };
 $('moved').onchange = () => { S.shown = 10; draw(); };
 $('more').onclick = () => { S.shown += 20; draw(); };
 document.addEventListener('click', e => {
+  const summary = e.target.closest('details[data-disclosure-key] > summary');
+  if (summary) {
+    e.preventDefault();
+    const panel = summary.parentElement, id = panel.dataset.disclosureKey;
+    panel.open = !panel.open;
+    panel.open ? openRosters.add(id) : openRosters.delete(id);
+    return;
+  }
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.open) { S.open.has(b.dataset.open) ? S.open.delete(b.dataset.open) : S.open.add(b.dataset.open); draw(); }
