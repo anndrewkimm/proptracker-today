@@ -307,7 +307,7 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('.chart .col').count(), 10, 'Expanded stats must test populated game charts');
   await checkPhoneLayout(page, 'My picks and expanded stats');
   assert(await page.locator('.detail .tile').count() >= 4, 'Stats show number tiles');
-  await page.locator('.detail').screenshot({path:path.join(root,'../.phone-tools/stats-'+device.replaceAll(' ','-')+'.png')});
+  await page.screenshot({path:path.join(root,'../.phone-tools/stats-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
   providerName='DraftKings';
