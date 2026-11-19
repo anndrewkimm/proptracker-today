@@ -141,10 +141,13 @@ async function fixtureChecks(browser, url, device) {
   assert.match(await roster.locator(':scope > summary').innerText(), /ATL 2 out/);
   await roster.locator(':scope > summary > span').first().click();
   await roster.locator('.roster-player.selected').first().waitFor();
-  assert.match(await roster.innerText(), /Guards/);
-  assert.match(await roster.innerText(), /Centers/);
+  assert.match(await roster.innerText(), /Injury report/);
+  assert.match(await roster.innerText(), /Has lines tonight/);
   assert.match(await roster.locator('.roster-player.selected').first().innerText(), /This pick/);
-  assert.match(await roster.innerText(), /Not listed/);
+  assert.match(await roster.innerText(), /Not on injury report/);
+  const bench = await page.evaluate(() => rosterTiles([{id:'1966', name:'Test Player', position:'PG'}, {id:'99', name:'Deep Bench', position:'F'}], '1', '1966'));
+  assert.match(bench, /\+1 more without lines tonight/, 'Players without lines tonight are folded away');
+  assert(bench.indexOf('Deep Bench') > bench.indexOf('roster-more'), 'Bench player sits inside the folded list');
   await page.evaluate(() => draw());
   await roster.locator('.roster-player.selected').first().waitFor();
   assert.notEqual(await roster.getAttribute('open'), null, 'Background redraw keeps roster open');

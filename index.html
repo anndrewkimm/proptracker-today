@@ -109,19 +109,20 @@ summary { cursor: pointer; font-weight: 600 }
 .roster-team { margin-top: 10px }
 .roster-team > summary { font-size: 14px; padding: 6px 0 }
 .roster-group h4 { font-size: 12px; color: var(--muted); margin: 10px 0 6px }
-.roster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px }
-.roster-player { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 7px 3px; border-radius: 10px; background: #8b5cf609; border: 1px solid #8b5cf61a; gap: 3px }
+.roster-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px }
+.roster-player { min-width: 0; display: flex; align-items: center; padding: 5px 7px; border-radius: 10px; background: #8b5cf609; border: 1px solid #8b5cf61a; gap: 7px }
+.roster-text { min-width: 0; display: grid }
+.roster-more { margin-top: 8px } .roster-more > summary { font-size: 12.5px; color: var(--accent); padding: 6px 0; font-weight: 600 }
 .roster-player.out { background: #dc26260c; border-color: #dc26264a }
 .roster-player.uncertain { background: #d977060c; border-color: #d977064a }
 .roster-player.selected { border: 2px solid #8b5cf6 }
-.roster-face { width: 38px; height: 38px; position: relative; border-radius: 50%; background: #8b5cf61a; display: grid; place-items: center; flex-shrink: 0; font-size: 12px }
+.roster-face { width: 32px; height: 32px; position: relative; border-radius: 50%; background: #8b5cf61a; display: grid; place-items: center; flex-shrink: 0; font-size: 12px }
 .roster-face img { position: absolute; width: 100%; height: 100%; object-fit: cover; border-radius: 50% }
 .roster-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.25 }
 .roster-position, .roster-status { font-size: 11px; color: var(--muted) }
 .out .roster-status { color: #dc2626; font-weight: 700 }
 .uncertain .roster-status { color: #b45309; font-weight: 700 }
 .roster-legend { font-size: 11px; margin: 8px 0 }
-@media(max-width: 360px) { .roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
 </style>
 </head>
 <body>
@@ -553,20 +554,27 @@ function rosterTiles(players, team, selected) {
   // Keep reported injuries even when ESPN's roster has not caught up with a move.
   for (const i of injuries) if (!rows.some(p => (i.id && i.id === p.id) || plainName(i.name) === plainName(p.name)))
     rows.push({id:i.id, name:i.name, position:i.position || '—', status:fresh ? i.status : 'Unknown'});
-  const groups = [['Guards', p => /G/.test(p)], ['Forwards', p => !/G/.test(p) && /F/.test(p)],
-    ['Centers', p => !/[GF]/.test(p) && /C/.test(p)], ['Position unavailable', p => !/[GFC]/.test(p)]];
-  return groups.map(([label, matches]) => {
-    const group = rows.filter(p => matches(p.position)).sort((a,b) => a.name.localeCompare(b.name));
-    if (!group.length) return '';
-    return `<div class="roster-group"><h4>${label}</h4><div class="roster-grid">${group.map(p => {
-      const tone = p.status === 'Out' ? 'out' : ['Doubtful','Questionable','Day-To-Day'].includes(p.status) ? 'uncertain' : '';
-      const initials = p.name.split(' ').map(n=>n[0]).slice(0,2).join('');
-      return `<div class="roster-player ${tone} ${p.id === selected ? 'selected' : ''}">
-        <span class="roster-face"><span>${esc(initials)}</span>${/^\d+$/.test(p.id || '') ? `<img loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${p.id}.png" alt="">` : ''}</span>
-        <span class="roster-name">${esc(p.name)}</span><span class="roster-position">${esc(p.position)}${p.id === selected ? ' · This pick' : ''}</span>
-        <span class="roster-status">${esc(p.status)}</span></div>`;
-    }).join('')}</div></div>`;
-  }).join('');
+  // Show who is on the report and who has lines tonight (the real rotation); fold the rest away.
+  const severity = s => ['Out','Doubtful','Questionable','Day-To-Day'].indexOf(s) + 1 || 5;
+  const spot = p => /G/.test(p) ? 0 : /F/.test(p) ? 1 : /C/.test(p) ? 2 : 3;
+  const byPosition = (a, b) => spot(a.position) - spot(b.position) || a.name.localeCompare(b.name);
+  const lines = new Set(S.props.map(p => String(p.id)));
+  const listed = rows.filter(p => p.status !== 'Not listed' && p.status !== 'Unknown')
+    .sort((a, b) => severity(a.status) - severity(b.status) || byPosition(a, b));
+  const rest = rows.filter(p => !listed.includes(p)), status = fresh ? 'Not on injury report' : 'Injury status unknown';
+  const active = rest.filter(p => lines.has(String(p.id)) || p.id === selected).sort(byPosition);
+  const bench = rest.filter(p => !active.includes(p)).sort(byPosition);
+  const grid = group => `<div class="roster-grid">${group.map(p => {
+    const tone = p.status === 'Out' ? 'out' : ['Doubtful','Questionable','Day-To-Day'].includes(p.status) ? 'uncertain' : '';
+    const initials = p.name.split(' ').map(n=>n[0]).slice(0,2).join('');
+    return `<div class="roster-player ${tone} ${p.id === selected ? 'selected' : ''}">
+      <span class="roster-face"><span>${esc(initials)}</span>${/^\d+$/.test(p.id || '') ? `<img loading="lazy" src="https://a.espncdn.com/i/headshots/nba/players/full/${p.id}.png" alt="">` : ''}</span>
+      <span class="roster-text"><span class="roster-name">${esc(p.name)}</span><span class="roster-position">${esc(p.position)}${p.id === selected ? ' · This pick' : ''}${
+        p.status === 'Not listed' ? '' : ` · <span class="roster-status">${esc(p.status)}</span>`}</span></span></div>`;
+  }).join('')}</div>`;
+  return (listed.length ? `<div class="roster-group"><h4>Injury report</h4>${grid(listed)}</div>` : `<p class="sub roster-legend">${fresh ? 'Nobody on the injury report.' : 'Injury status unknown.'}</p>`)
+    + (active.length ? `<div class="roster-group"><h4>Has lines tonight · ${status}</h4>${grid(active)}</div>` : '')
+    + (bench.length ? `<details class="roster-more"><summary>+${bench.length} more without lines tonight</summary><div class="roster-group"><h4>${status}</h4>${grid(bench)}</div></details>` : '');
 }
 function availabilitySummary(c) {
   const game = S.games.find(g => g.matchup === c.matchup);
