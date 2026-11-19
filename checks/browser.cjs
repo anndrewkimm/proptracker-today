@@ -184,7 +184,7 @@ async function fixtureChecks(browser, url, device) {
   await page.waitForFunction(() => document.querySelector('article.card .pick-why')?.open);
   await page.evaluate(() => draw());
   assert.notEqual(await why.getAttribute('open'), null, 'Background redraw keeps explanation open');
-  for (const text of ['will likely get the starting nod', 'starting lineup unverified', 'do not claim verified'])
+  for (const text of ['will likely get the starting nod', 'starting lineup unverified', "doesn't adjust for role changes"])
     assert((await why.innerText()).includes(text), `Expanded commentary retains: ${text}`);
   assert(await why.locator('b').count() > 0, 'Explanation has skimmable emphasis');
   await checkPhoneLayout(page, 'expanded pick explanation');
@@ -294,7 +294,7 @@ async function fixtureChecks(browser, url, device) {
   assert(!opportunity.signs.includes('Less pick'));
   assert(opportunity.html.includes('&#39;')&&!opportunity.html.includes('<script>'));
   await page.locator('article.card .pick-why summary').click();
-  assert(await page.locator('article.card .scenario-table tbody tr').count()>0);
+  assert(await page.locator('article.card .whatif-row:not(.whatif-head)').count()>0);
   assert.match(await page.locator('article.card .pick-why').innerText(),/not forecasts or hit probabilities/);
   await checkPhoneLayout(page,'Minutes scenarios with populated history');
   await page.screenshot({path:path.join(root,'../.phone-tools/opportunity-'+device.replaceAll(' ','-')+'.png'),fullPage:true});
@@ -303,6 +303,8 @@ async function fixtureChecks(browser, url, device) {
   assert.equal(await page.locator('.detail').count(), 1);
   assert.equal(await page.locator('.chart .col').count(), 10, 'Expanded stats must test populated game charts');
   await checkPhoneLayout(page, 'My picks and expanded stats');
+  assert(await page.locator('.detail .tile').count() >= 4, 'Stats show number tiles');
+  await page.locator('.detail').screenshot({path:path.join(root,'../.phone-tools/stats-'+device.replaceAll(' ','-')+'.png')});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.evaluate(() => window.__S.seasonYear), 2027, 'Season year from the dated scoreboard');
   providerName='DraftKings';

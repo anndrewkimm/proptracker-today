@@ -63,23 +63,41 @@ summary { cursor: pointer; font-weight: 600 }
 .tag.plain { background: var(--soft); color: var(--muted) } .tag.goblin { background: var(--accent-soft); color: var(--accent) }
 .row { display: flex; gap: 8px } .row button { flex: 1 }
 .green { color: var(--good) } .red { color: var(--bad) }
-.detail { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 14px }
-.detail h3 { font-size: 13px; margin: 0 0 3px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em }
-.detail ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px }
-.detail li { padding-left: 18px; text-indent: -18px }
+.detail { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 14px }
+.detail h3, .why-notes h3 { font-size: 11.5px; margin: 0 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600 }
 .pick-why { border-top: 1px solid var(--line); font-size: 13px }
 .pick-why summary { padding: 10px 0; color: var(--accent); min-height: 40px }
-.why-notes { display: grid; gap: 9px; padding: 2px 0 10px; line-height: 1.5 }
+.why-notes { display: grid; gap: 12px; padding: 2px 0 10px; line-height: 1.4 }
 .why-notes p { margin: 0 }
-.scenario-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; margin: 7px 0 }
-.scenario-table th, .scenario-table td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere }
-.why-notes b, .availability b, .detail b { color: var(--fg) }
-.chart { display: flex; align-items: flex-end; gap: 3px; height: 112px; position: relative; margin-top: 14px }
+.availability b { color: var(--fg) }
+/* Number tiles: label, big value, small context; the left edge shows whether it helps this pick. */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px }
+.tile { background: var(--soft); border-radius: 10px; padding: 7px 8px; display: grid; gap: 1px; align-content: start; border-left: 3px solid transparent }
+.tile span { font-size: 11px; color: var(--muted); line-height: 1.25 }
+.tile b { font-size: 18px; line-height: 1.15; font-variant-numeric: tabular-nums }
+.tile.good { border-left-color: var(--good) } .tile.good b { color: var(--good) }
+.tile.bad { border-left-color: var(--bad) } .tile.bad b { color: var(--bad) }
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
+.points li { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 9px; align-items: start }
+.points li::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-top: 5px }
+.points li.good::before { background: var(--good) } .points li.bad::before { background: var(--bad) } .points li.warn::before { background: var(--warn) }
+.points small { display: block; color: var(--muted); font-size: 12.5px }
+.report { margin: 0; padding: 7px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0 }
+.report small { display: block; color: var(--muted); font-size: 11px; margin-bottom: 2px }
+.whatif { display: grid; gap: 6px }
+.whatif-row { display: grid; grid-template-columns: 50px 42px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12.5px; font-variant-numeric: tabular-nums }
+.whatif-head { font-size: 11px; color: var(--muted) } .whatif-head span:last-child { grid-column: span 2 }
+.mini { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden } .mini i { display: block; height: 100%; background: var(--good) }
+.why-foot { font-size: 11.5px; color: var(--muted); line-height: 1.4; margin: 0 }
+.chart-head { display: flex; justify-content: space-between; align-items: center; gap: 8px } .chart-head h3 { margin: 0 }
+.chart { display: flex; align-items: flex-end; gap: 4px; height: 112px; position: relative; margin-top: 10px }
 .col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums }
-.col i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 2px }
+.col i { display: block; width: 100%; border-radius: 4px 4px 0 0; min-height: 2px }
 .col small { font-size: 8.5px; white-space: nowrap; overflow: hidden; max-width: 100% }
 .lineat { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted) }
-.table { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums }
+.col em { font-style: normal; position: relative; z-index: 1; background: var(--panel); padding: 0 2px; border-radius: 3px }
+.others { display: grid; gap: 4px }
+.others div { display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; background: var(--soft); border-radius: 8px; font-size: 13.5px }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px }
 .mine li { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0 }
 .mine ul { list-style: none; margin: 6px 0 0; padding: 0 }
@@ -582,30 +600,65 @@ document.addEventListener('toggle', async e => {
   const stamp = S.injuryMeta ? new Date(S.injuryMeta.sourceTime).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : 'unavailable';
   body.innerHTML = `<p class="sub roster-legend">ESPN · ${esc(stamp)} · Not listed ≠ confirmed playing. Positions, not a starting lineup.</p>` + sections.join('');
 }, true);
+// Why this pick: numbers first, one line per point, fine print last. The full prose stays in
+// availabilityNotes / Opportunity.notes, which Ask still receives.
 function availabilityHTML(c) {
-  const notes = availabilityNotes(c);
-  const statuses = notes.filter(n => n.startsWith(`${c.team}:`) || n.startsWith(`${c.opp}:`));
+  const k = 'why-' + key(c);
   return `${availabilitySummary(c)}
-    <details class="pick-why" data-disclosure-key="why-${esc(key(c))}" ${openRosters.has('why-'+key(c)) ? 'open' : ''}><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
-    ${opportunityHTML(c)}
-    ${tagReasons(c).map(([label, helps, why]) => `<p><b>${esc(label)}</b> <span class="${helps === null ? '' : helps ? 'green' : 'red'}">${helps === null ? 'Context' : helps ? 'Helps' : 'Caution'}</span><br>${skimText(why)}</p>`).join('')}
-    ${notes.filter(n => !statuses.includes(n)).map(n => `<p>${skimText(n)}</p>`).join('')}
+    <details class="pick-why" data-disclosure-key="${esc(k)}" ${openRosters.has(k) ? 'open' : ''}><summary>Why this pick${c.opportunity?.review ? ' · Review role / line' : ''}</summary><div class="why-notes">
+    ${whyTiles(c)}${whyPoints(c)}${roleReportsHTML(c)}${whatIf(c)}${whyFoot(c)}
     </div></details>`;
 }
-function opportunityHTML(c) {
-  const a=c.opportunity;
-  if(!a)return '';
-  const rows=a.scenarios.map(s=>`<tr><td>${s.minutes} min</td><td>${s.production}</td><td>${s.hits}/${s.games}${s.pushes?` · ${s.pushes} push`:''}</td></tr>`).join('');
-  const context=[];
-  if(c.volume)context.push(`Shot volume: ${c.volume[0]}, ${c.volume[1]} per game recently vs ${c.volume[2]} this season. More minutes and a higher shot rate are different drivers.`);
-  if(c.total!=null||c.spread!=null)context.push(`Game environment: total ${c.total??'unknown'}, team spread ${c.spread??'unknown'}. A high total can reflect scoring efficiency or pace; a large spread adds playing-time uncertainty.`);
-  if(c.def)context.push(`Matchup sample: ${c.opp}, ${c.def.n} observations; players averaged ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff>=0?'more':'fewer'} ${STAT_NAME[c.stat]} than usual. Historical matchup evidence can change with the lineups.`);
-  if(c.oppsOut?.length)context.push(`Opponent absences: ${c.oppsOut.join(', ')}. Defensive personnel may differ from those past games.`);
-  context.push(...rotationEvidence(c).slice(1).filter(n=>!n.startsWith('Rotation and workload')));
-  context.push(...(window.lineContextNotes?.(c)||[]));
-  return Opportunity.notes(a,c.line,c.side).map(n=>`<p>${skimText(n)}</p>`).join('')+
-    context.map(n=>`<p>${skimText(n)}</p>`).join('')+
-    (rows?`<div><b>Minutes scenarios</b><table class="scenario-table"><thead><tr><th>If he plays</th><th>At recent rate</th><th>${c.side==='more'?'Over':'Under'} in similar minutes</th></tr></thead><tbody>${rows}</tbody></table><p class="sub">Games within 3 minutes, this season. 0/0 means no comparisons. These are scenarios, not forecasts or hit probabilities. Teammates and usage may differ; historical team membership is unavailable in this feed.</p></div>`:'');
+const toneOf = helps => helps == null ? '' : helps ? 'good' : 'bad';
+const tilesHTML = t => t.length ? `<div class="tiles">${t.map(([label, value, sub, helps]) =>
+  `<div class="tile ${toneOf(helps)}"><span>${esc(label)}</span><b>${esc(String(value))}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`).join('')}</div>` : '';
+function whyTiles(c) {
+  const a = c.opportunity, more = c.side === 'more', t = [];
+  // History is not colored when the role or line needs review: it may not compare to tonight.
+  const lean = h => a?.review ? null : h;
+  if (a?.median != null) t.push(['Line vs median', c.line, `median ${a.median}`, lean(a.median === c.line ? null : (a.median > c.line) === more)]);
+  if (a?.lineMinutes != null) t.push(['Minutes needed', Math.round(a.lineMinutes), `plays ~${a.minutes}`,
+    lean(Math.abs(a.lineMinutes - a.minutes) < 1 ? null : (a.lineMinutes < a.minutes) === more)]);
+  if (c.formGames) { const r = c.formHits / c.formGames;
+    t.push([`Last ${c.formGames}`, `${c.formHits}/${c.formGames}`, more ? 'over' : 'under', lean(r > .4 && r < .6 ? null : r >= .6)]); }
+  return tilesHTML(t);
+}
+function whyPoints(c) {
+  const a = c.opportunity, f = a?.flags || [], r = rotation(c);
+  const out = tagReasons(c).map(([label, helps, , short]) => [toneOf(helps), label, short]);
+  if (c.oppsOut?.length) out.push(['', `${c.opp} out`, c.oppsOut.map(n => n.split(' (')[0]).join(', ')]);
+  if (r?.played >= 2) out.push(['warn', 'Heavy workload', `${r.played + 1} games in 4 days if he plays`]);
+  if (f.includes('minutes')) out.push(['warn', 'Minutes shifted', `last 3: ${a.recentMinutes} min · before: ${a.priorMinutes}`]);
+  if (f.includes('line')) out.push(['warn', 'Unusual line', `far from his recent median of ${a.median}`]);
+  if (f.includes('availability')) out.push(['warn', 'Role may change', 'chance follows the market, not a new role']);
+  if (f.includes('sample') || f.includes('coverage')) out.push(['warn', 'Limited data', 'few recent games or incomplete reports']);
+  if (!out.length) out.push(['good', 'Nothing unusual', 'no injury, role or line flags']);
+  return `<ul class="points">${out.map(([tone, label, short]) => `<li class="${tone}"><span><b>${esc(label)}</b>${short ? `<small>${esc(short)}</small>` : ''}</span></li>`).join('')}</ul>`;
+}
+const shortTime = at => { const d = new Date(at);
+  return isNaN(d) ? at : d.toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}); };
+function roleReportsHTML(c) {
+  return [...new Set(c.roleReports || [])].map(r => r.match(/^ESPN report \((.*?)\): ([\s\S]*)$/)).filter(Boolean)
+    .map(([, at, text]) => `<blockquote class="report"><small>ESPN report · ${esc(shortTime(at))}</small>${esc(text)}</blockquote>`).join('');
+}
+function whatIf(c) {
+  const a = c.opportunity, more = c.side === 'more';
+  if (!a?.scenarios?.length) return '';
+  const rows = a.scenarios.map(s => {
+    const pace = s.production, ink = pace === c.line ? '' : (pace > c.line) === more ? 'green' : 'red';
+    return `<div class="whatif-row"><span>${s.minutes} min</span><b class="${ink}">${pace}</b>
+      <span class="mini"><i style="width:${s.games ? Math.round(s.hits / s.games * 100) : 0}%"></i></span>
+      <span>${s.games ? `${s.hits}/${s.games}` : '—'}${s.pushes ? ` +${s.pushes} push` : ''}</span></div>`;
+  }).join('');
+  return `<div><h3>If he plays…</h3><div class="whatif"><div class="whatif-row whatif-head"><span>Minutes</span><span>Pace</span><span>${more ? 'Over' : 'Under'} in similar games</span></div>${rows}</div>
+    <p class="why-foot" style="margin-top:6px">Pace = his recent rate × minutes. Record = this season's games within 3 minutes. Scenarios, not forecasts or hit probabilities.</p></div>`;
+}
+function whyFoot(c) {
+  const bits = [S.injuryMeta ? `ESPN injuries as of ${shortTime(S.injuryMeta.sourceTime)}` : 'Injury coverage unavailable', 'starting lineup unverified'];
+  if (!c.team || !c.opp) bits.push('team not matched, so injury coverage is incomplete');
+  if (!c.teamStatuses?.length && !c.opponentStatuses?.length) bits.push('not listed ≠ confirmed playing');
+  bits.push("chance follows the market and doesn't adjust for role changes");
+  return `<p class="why-foot">${esc(bits.join(' · '))}.</p>`;
 }
 // Escape every text segment before adding emphasis; preserve apostrophes/entities.
 function skimText(text) {
@@ -622,87 +675,94 @@ const key = c => `${S.today}|${c.id}|${c.stat}`;
 function tagReasons(c) {
   const more = c.side === 'more', word = more ? 'over' : 'under', team = c.team || 'His team', label = STAT_NAME[c.stat].toLowerCase(), out = [];
   const helpsLess = more ? '.' : ', which helps a Less.';
-  if (c.injury) out.push([c.injury, false, `Listed ${c.injury.toLowerCase()} by ESPN, so check that he's playing.`]);
-  if (c.rest === 0) out.push(['Back-to-back', !more, 'He played last night, so he may tire or play less' + helpsLess]);
+  // [label, helps this pick?, full sentence, one-line version for Why this pick]
+  if (c.injury) out.push([c.injury, false, `Listed ${c.injury.toLowerCase()} by ESPN, so check that he's playing.`, 'listed by ESPN · check he plays']);
+  if (c.rest === 0) out.push(['Back-to-back', !more, 'He played last night, so he may tire or play less' + helpsLess, 'played last night']);
   if (c.minL5 && c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 4) {
     const up = c.minL5 > c.minSeason;
-    out.push([up ? 'Minutes up' : 'Minutes down', up === more, `Playing ${Math.round(c.minL5)} minutes lately, ${up ? 'up' : 'down'} from ${Math.round(c.minSeason)} this season.`]);
+    out.push([up ? 'Minutes up' : 'Minutes down', up === more, `Playing ${Math.round(c.minL5)} minutes lately, ${up ? 'up' : 'down'} from ${Math.round(c.minSeason)} this season.`,
+      `${Math.round(c.minL5)} min lately vs ${Math.round(c.minSeason)} this season`]);
   }
   if (c.spread != null && Math.abs(c.spread) >= 10) {
     const lead = c.spread < 0 ? `${team} are favored by ${Math.abs(c.spread)}` : `${team} are ${c.spread}-point underdogs`;
-    out.push(['Blowout risk', !more, `${lead}. If it gets lopsided, starters can sit the 4th quarter` + helpsLess]);
+    out.push(['Blowout risk', !more, `${lead}. If it gets lopsided, starters can sit the 4th quarter` + helpsLess,
+      `${c.spread < 0 ? `${team} favored by ${Math.abs(c.spread)}` : `${team} +${c.spread}`} · starters may sit late`]);
   }
-  if (c.formRate != null && c.formRate < c.market - .15) out.push(['History differs', null, `Went ${word} in ${c.formHits} of his last ${c.formGames}. The current price can reflect different minutes or usage; this is not automatically evidence against the market.`]);
+  if (c.formRate != null && c.formRate < c.market - .15) out.push(['History differs', null, `Went ${word} in ${c.formHits} of his last ${c.formGames}. The current price can reflect different minutes or usage; this is not automatically evidence against the market.`,
+    `${word} in ${c.formHits} of ${c.formGames} · price may reflect a new role`]);
   if (c.def && c.def.of >= 15) {
     const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
     if (soft || tough) {
       const helps = soft === more, by = Math.abs(c.def.diff).toFixed(1);
-      out.push([helps ? 'Matchup helps' : 'Matchup hurts', helps, `Players get ${by} ${soft ? 'more' : 'fewer'} ${label} than usual against ${c.opp}.`]);
+      out.push([helps ? 'Matchup helps' : 'Matchup hurts', helps, `Players get ${by} ${soft ? 'more' : 'fewer'} ${label} than usual against ${c.opp}.`,
+        `${c.opp} allow ${by} ${soft ? 'more' : 'fewer'} ${label} than usual`]);
     }
   }
   if (c.mates.length) {
     const names = c.mates.map(n => n.split(' (')[0]);
-    out.push([`${names.length} teammate${names.length > 1 ? 's' : ''} out`, null, `${names.slice(0, 2).join(', ')}${names.length > 2 ? ` and ${names.length - 2} more` : ''} out. That can mean more shots and minutes for him.`]);
+    out.push([`${names.length} teammate${names.length > 1 ? 's' : ''} out`, null, `${names.slice(0, 2).join(', ')}${names.length > 2 ? ` and ${names.length - 2} more` : ''} out. That can mean more shots and minutes for him.`,
+      `${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2} more` : ''} · more shots possible`]);
   }
   return out;
 }
-function factors(c) {
-  const more = c.side === 'more', word = more ? 'over' : 'under', label = STAT_NAME[c.stat], out = [];
-  const lean = r => r > .4 && r < .6 ? null : r >= .6;
-  out.push([true, `DraftKings prices ${more ? 'More' : 'Less'} ${c.line} at ${c.price > 0 ? '+' : ''}${c.price}: ${Math.round(c.market * 100)}% with the cut removed.`]);
-  if (c.formGames) out.push([lean(c.formHits / c.formGames), `Went ${word} ${c.line} in ${c.formHits} of his last ${c.formGames} games.`]);
-  if (c.seasonGames) out.push([lean(c.seasonHits / c.seasonGames), `This season: ${word} ${c.line} in ${c.seasonHits} of ${c.seasonGames} games, averaging ${c.seasonAvg}.`]);
-  if (c.l20Games > c.formGames) out.push([lean(c.l20Hits / c.l20Games), `Last ${c.l20Games} games: ${word} in ${c.l20Hits}.`]);
-  if (c.median != null) out.push([c.median === c.line ? null : (c.median > c.line) === more, `Middle game of his last 10: ${c.median} ${label}.`]);
-  if (c.l5 != null) out.push([(c.l5 > c.line) === more, `Averaging ${c.l5} ${label} over his last 5.`]);
-  if (c.lastAvg != null) out.push([null, `Last season he averaged ${c.lastAvg} ${label}.`]);
-  if (c.volume && c.volume[2]) {
-    const change = (c.volume[1] - c.volume[2]) / c.volume[2];
-    out.push([Math.abs(change) < .1 ? null : (change > 0) === more, `${c.volume[0]}: ${c.volume[1]} a game lately vs ${c.volume[2]} this season.`]);
-  }
+// Stats: the last-10 chart first, then one tile per number, colored by whether it helps this pick.
+function statTiles(c) {
+  const more = c.side === 'more', word = more ? 'over' : 'under', review = c.opportunity?.review, t = [];
+  const rate = (h, n) => { const r = h / n; return r > .4 && r < .6 ? null : r >= .6; };
+  const vs = v => v == null || v === c.line ? null : (v > c.line) === more;
+  const hist = h => review ? null : h;  // history may not compare when the role or line needs review
+  if (c.l5 != null) t.push(['Last 5 avg', c.l5, '', hist(vs(c.l5))]);
+  if (c.median != null) t.push(['Last 10 median', c.median, '', hist(vs(c.median))]);
+  if (c.seasonGames) t.push(['Season avg', c.seasonAvg, `${word} ${c.seasonHits}/${c.seasonGames}`, hist(rate(c.seasonHits, c.seasonGames))]);
+  if (c.l20Games > c.formGames) t.push([`Last ${c.l20Games}`, `${c.l20Hits}/${c.l20Games}`, word, hist(rate(c.l20Hits, c.l20Games))]);
   if (c.vsOpp.length >= 2) {
     const hits = c.vsOpp.filter(v => more ? v > c.line : v < c.line).length;
-    out.push([hits / c.vsOpp.length >= .5, `vs ${c.opp}: ${word} in ${hits} of his last ${c.vsOpp.length} (${c.vsOpp.join(', ')}).`]);
+    t.push([`vs ${c.opp}`, round1(mean(c.vsOpp)), `${word} ${hits}/${c.vsOpp.length}`, hist(hits / c.vsOpp.length >= .5)]);
   }
-  if(c.opportunity?.review)for(let i=1;i<out.length;i++)out[i]=[null,out[i][1]+' Historical context; role/line comparability needs review.'];
+  if (c.venueAvg != null && c.venueGames >= 2) t.push([c.isHome ? 'At home' : 'On the road', c.venueAvg, `${c.venueGames} games`, hist(vs(c.venueAvg))]);
+  if (c.lastAvg != null) t.push(['Last season', c.lastAvg, 'average', null]);
+  const r = rotation(c);
+  if (c.minL5) {
+    const up = c.minL5 > c.minSeason;
+    t.push(['Minutes L5', c.minL5, `season ${c.minSeason}${r ? ` · ${r.lo}–${r.hi}` : ''}`, c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 3 ? up === more : null]);
+  }
+  if (c.volume && c.volume[2]) {
+    const change = (c.volume[1] - c.volume[2]) / c.volume[2];
+    t.push([`${c.volume[0]} L5`, c.volume[1], `season ${c.volume[2]}`, hist(Math.abs(change) < .1 ? null : (change > 0) === more)]);
+  }
   if (c.def && c.def.of >= 15) {
     const soft = c.def.rank <= 8, tough = c.def.rank > c.def.of - 8;
-    out.push([soft || tough ? soft === more : null, `Against ${c.opp}, players get ${Math.abs(c.def.diff).toFixed(1)} ${c.def.diff >= 0 ? 'more' : 'fewer'} ${label} than their average (${ordinal(c.def.rank)} of ${c.def.of}).`]);
+    t.push([`${c.opp} defense`, `${ordinal(c.def.rank)} of ${c.def.of}`, `${c.def.diff >= 0 ? '+' : '−'}${Math.abs(c.def.diff).toFixed(1)} vs avg`, soft || tough ? soft === more : null]);
   }
-  if (c.mates.length) out.push([null, `Teammates out: ${c.mates.join(', ')}. Role changes are possible; an absence alone does not tell us who benefits.`]);
-  if (c.oppsOut.length) out.push([null, `${c.opp} out: ${c.oppsOut.join(', ')}.`]);
-  if (c.minL5 && c.minSeason && Math.abs(c.minL5 - c.minSeason) >= 3) {
-    const up = c.minL5 > c.minSeason;
-    out.push([up === more, `Minutes ${up ? 'up' : 'down'}: ${c.minL5} a game lately vs ${c.minSeason} this season.`]);
-  }
-  if (c.venueAvg != null && c.venueGames >= 2) out.push([null, `Averages ${c.venueAvg} ${label} ${c.isHome ? 'at home' : 'on the road'} this season (${c.venueGames} games).`]);
-  if (c.rest === 0) out.push([!more, 'Second night of a back-to-back.']);
-  if (c.spread != null && Math.abs(c.spread) >= 10) out.push([!more, `Spread ${c.spread > 0 ? '+' : ''}${c.spread}: blowout risk, starters may sit the 4th quarter.`]);
-  if (c.total != null && (c.total >= 235 || c.total <= 215)) out.push([(c.total >= 235) === more, `Game total ${c.total}: ${c.total >= 235 ? 'fast, high-scoring' : 'slow, low-scoring'} game expected.`]);
-  const near = c.fair != null && c.fair !== c.line ? ` The standard line is probably near ${c.fair}${c.stdChance ? `, where ${c.stdSide === 'more' ? 'More' : 'Less'} is about ${Math.round(c.stdChance * 100)}%` : ''}.` : '';
-  if (c.kind === 'goblin') out.push([null, `Goblin-like line: much easier than a coin flip. On PrizePicks a line like this is usually a goblin (More only, lower payout).${near}`]);
-  if (c.kind === 'demon') out.push([false, `Demon-like line: Less is much easier than a coin flip, so on PrizePicks this line would be a demon, which is More only. This Less probably isn't offered.${near}`]);
-  if (c.injury) out.push([false, `Listed ${c.injury.toLowerCase()} by ESPN.`]);
-  out.push(...rotationEvidence(c).map(text => [null, text]));
-  return out;
+  if (c.total != null) t.push(['Game total', c.total, c.spread != null ? `spread ${c.spread > 0 ? '+' : ''}${c.spread}` : '',
+    c.total >= 235 || c.total <= 215 ? (c.total >= 235) === more : null]);
+  if (c.rest === 0) t.push(['Rest', 'B2B', r?.b2b.length >= 3 && r.rested.length >= 3 ? `${round1(mean(r.b2b))} min on B2Bs` : '2nd night', !more]);
+  else if (c.rest > 0) t.push(['Rest', `${c.rest}d`, c.rest === 1 ? 'day off' : 'days off', null]);
+  return tilesHTML(t);
 }
 
-function rotationEvidence(c) {
+// Recent minutes for this season, excluding today; numbers only, shared by the tiles and rotationEvidence.
+function rotation(c) {
   const rows = c.log.filter(g => g.cur && g.d < S.today && Number.isFinite(g.m) && g.m > 0)
     .sort((a, b) => b.d.localeCompare(a.d));
-  const recent = rows.slice(0, 10), minutes = recent.map(g => g.m).sort((a,b) => a-b);
-  if (!minutes.length) return ['Rotation evidence unavailable for this season.'];
+  const minutes = rows.slice(0, 10).map(g => g.m).sort((a,b) => a-b);
+  if (!minutes.length) return null;
   const n = minutes.length, median = n % 2 ? minutes[(n-1)/2] : (minutes[n/2-1]+minutes[n/2])/2;
-  const out = [`Observed minutes: median ${round1(median)}, range ${minutes[0]}–${minutes[n-1]} over ${n} recent appearances. Includes injury, foul and overtime effects; not a forecast or a verified coaching tendency. Team changes may affect this season sample.`];
-  if (n < 5) out.push('Small rotation sample: fewer than 5 appearances this season.');
   const played = rows.filter(g => dayGap(S.today, g.d) >= 1 && dayGap(S.today, g.d) <= 3).length;
-  if (played >= 2) out.push(`Workload: played ${played} of the previous 3 days; playing today would be ${played+1} appearances in 4 days.`);
   const b2b = [], rested = [];
   for (let i=0; i < Math.min(rows.length-1, 20); i++) {
     const gap = dayGap(rows[i].d, rows[i+1].d);
     if (gap >= 1 && gap <= 7) (gap === 1 ? b2b : rested).push(rows[i].m);
   }
-  if (b2b.length >= 3 && rested.length >= 3) out.push(`After playing the previous day: ${round1(mean(b2b))} minutes (${b2b.length} games), vs ${round1(mean(rested))} with days off (${rested.length} games). Observed usage, not a confirmed coaching policy.`);
+  return {n, median, lo:minutes[0], hi:minutes[n-1], played, b2b, rested};
+}
+function rotationEvidence(c) {
+  const r = rotation(c);
+  if (!r) return ['Rotation evidence unavailable for this season.'];
+  const out = [`Observed minutes: median ${round1(r.median)}, range ${r.lo}–${r.hi} over ${r.n} recent appearances. Includes injury, foul and overtime effects; not a forecast or a verified coaching tendency. Team changes may affect this season sample.`];
+  if (r.n < 5) out.push('Small rotation sample: fewer than 5 appearances this season.');
+  if (r.played >= 2) out.push(`Workload: played ${r.played} of the previous 3 days; playing today would be ${r.played+1} appearances in 4 days.`);
+  if (r.b2b.length >= 3 && r.rested.length >= 3) out.push(`After playing the previous day: ${round1(mean(r.b2b))} minutes (${r.b2b.length} games), vs ${round1(mean(r.rested))} with days off (${r.rested.length} games). Observed usage, not a confirmed coaching policy.`);
   out.push('Rotation and workload context do not change the displayed probability.');
   return out;
 }
@@ -720,28 +780,32 @@ function kindTag(c) {
   return '<span class="tag plain">Standard</span>';
 }
 function chart(c) {
-  const games = c.log.slice(0, 10).reverse(), val = VALUE[c.stat];
+  const games = c.log.slice(0, 10).reverse(), val = VALUE[c.stat], more = c.side === 'more';
   if (!games.length) return '';
   const top = Math.max(c.line, ...games.map(val), 1) * 1.1;
+  let hits = 0, decided = 0;
   const bars = games.map(g => {
-    const v = val(g), hit = v === c.line ? null : (c.side === 'more') === (v > c.line);
+    const v = val(g), hit = v === c.line ? null : more === (v > c.line);
+    if (hit !== null) { decided++; hits += hit; }
     const color = hit === null ? 'var(--muted)' : hit ? 'var(--good)' : 'var(--bad)';
-    return `<div class="col" title="${esc(g.d)} ${g.h ? 'vs' : '@'} ${esc(g.o)}">${v}<i style="height:${Math.max(2, v / top * 74)}px;background:${color}"></i><small>${esc(g.o)}</small></div>`;
+    return `<div class="col" title="${esc(g.d)} ${g.h ? 'vs' : '@'} ${esc(g.o)}"><em>${v}</em><i style="height:${Math.max(2, v / top * 74)}px;background:${color}"></i><small>${esc(g.o)}</small></div>`;
   }).join('');
-  return `<div><h3>${esc(STAT_NAME[c.stat])}: last ${games.length} games</h3><div class="chart">${bars}<div class="lineat" style="bottom:${c.line / top * 74 + 26}px"></div></div><div class="sub">Dashed line: ${c.line}. Green would have hit this pick.</div></div>`;
+  const tag = !decided ? 'plain' : hits / decided >= .6 ? 'good' : hits / decided <= .4 ? 'bad' : 'plain';
+  return `<div><div class="chart-head"><h3>${esc(STAT_NAME[c.stat])} · last ${games.length}</h3><span class="tag ${tag}">${hits}/${decided} ${more ? 'over' : 'under'} ${c.line}</span></div>
+    <div class="chart">${bars}<div class="lineat" style="bottom:${c.line / top * 74 + 26}px"></div></div></div>`;
 }
 function detail(c, all) {
-  const list = (rows, mark, cls) => rows.length ? `<ul>${rows.map(r => `<li><span class="${cls}">${mark}</span> ${skimText(r[1])}</li>`).join('')}</ul>` : '<div class="sub">Nothing</div>';
-  const f = factors(c), others = all.filter(o => o.id === c.id && o.stat !== c.stat).sort((a, b) => b.score - a.score);
-  const why = tagReasons(c);
+  const others = all.filter(o => o.id === c.id && o.stat !== c.stat).sort((a, b) => b.score - a.score);
+  const near = c.fair != null && c.fair !== c.line ? ` Standard line probably near ${c.fair}.` : '';
+  const kind = c.kind === 'goblin' ? `Goblin-like: on PrizePicks this is usually More only, at a lower payout.${near}`
+    : c.kind === 'demon' ? `Demon-like: PrizePicks would make this More only, so this Less probably isn't offered.${near}` : '';
   return `<div class="detail">
-    <div class="sub"><b>${c.signs.length} of ${MAX_SIGNS} evidence checks:</b> ${esc(c.signs.join(' · ') || 'none')}. Market ${Math.round(c.market * 100)}% · DK ${c.price > 0 ? '+' : ''}${c.price}.</div>
-    ${why.length ? `<ul>${why.map(([t, h, w]) => `<li><span class="${h === null ? '' : h ? 'green' : 'red'}">●</span> <b>${esc(t)}:</b> ${skimText(w)}</li>`).join('')}</ul>` : ''}
-    <div><h3>For this pick</h3>${list(f.filter(r => r[0] === true), '✓', 'green')}</div>
-    <div><h3>Against it</h3>${list(f.filter(r => r[0] === false), '✗', 'red')}</div>
-    ${f.some(r => r[0] === null) ? `<div><h3>Also</h3>${list(f.filter(r => r[0] === null), '•', '')}</div>` : ''}
     ${chart(c)}
-    ${others.length ? `<div><h3>His other lines today</h3><div class="table">${others.map(o => `<span>${esc(pickText(o))}</span><span>${Math.round(o.score * 100)}%</span><span class="stars">${stars(o)}</span>`).join('')}</div></div>` : ''}
+    ${statTiles(c)}
+    ${c.opportunity?.review ? '<p class="why-foot">Role or line review flagged, so past games may not compare to tonight. History tiles are left uncolored.</p>' : ''}
+    ${kind ? `<p class="why-foot">${esc(kind)}</p>` : ''}
+    <p class="why-foot">DraftKings ${c.price > 0 ? '+' : ''}${c.price} · ${Math.round(c.market * 100)}% with the cut removed · ${c.signs.length} of ${MAX_SIGNS} evidence checks${c.signs.length ? `: ${esc(c.signs.join(', '))}` : ''}</p>
+    ${others.length ? `<div><h3>His other lines today</h3><div class="others">${others.map(o => `<div><span>${esc(pickText(o))}</span><span><b class="${o.score >= .6 ? 'green' : o.score < .52 ? 'red' : ''}">${Math.round(o.score * 100)}%</b> <span class="stars">${stars(o)}</span></span></div>`).join('')}</div></div>` : ''}
   </div>`;
 }
 function card(c, all, chosen) {
