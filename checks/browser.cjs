@@ -151,6 +151,35 @@ async function fixtureChecks(browser, url, device) {
   await page.evaluate(() => draw());
   await roster.locator('.roster-player.selected').first().waitFor();
   assert.notEqual(await roster.getAttribute('open'), null, 'Background redraw keeps roster open');
+  // Tapping a roster player with lines opens a full screen of all his props.
+  const sheetTile = roster.locator('.roster-player.selected').first();
+  assert.equal(await sheetTile.evaluate(el => el.tagName), 'BUTTON', 'Players with lines open their prop screen');
+  assert.equal(await roster.locator('button.roster-player').count(), 1, 'Players without lines are not tappable');
+  await sheetTile.click();
+  const sheet = page.locator('#sheet');
+  await sheet.locator('.prop').first().waitFor();
+  const expectedLines = await page.evaluate(() => window.__board.filter(c => String(c.id) === '1966').length);
+  assert(expectedLines > 1);
+  assert.equal(await sheet.locator('.prop').count(), expectedLines, 'Every line for the player is listed');
+  await sheet.locator('[data-sheet-open]').first().click();
+  assert.equal(await sheet.locator('.detail').count(), 1, 'Stats open inside the player screen');
+  await page.evaluate(() => draw());
+  assert.equal(await sheet.locator('.detail').count(), 1, 'Background redraw keeps the player screen and its stats');
+  for (const width of [320, 375, 390, 412, 430]) {
+    await page.setViewportSize({width, height:page.viewportSize().height});
+    const fit = await sheet.evaluate(el => ({scroll:el.scrollWidth, client:el.clientWidth, doc:document.documentElement.scrollWidth}));
+    assert(fit.scroll <= fit.client + 1 && fit.doc <= width + 1, `Player screen fits at ${width}px: ${JSON.stringify(fit)}`);
+  }
+  await page.setViewportSize(devices[device].viewport);
+  await page.screenshot({path:path.join(root,'../.phone-tools/player-'+device.replaceAll(' ','-')+'.png')});
+  await sheet.locator('[data-sheet-close]').click();
+  await page.waitForFunction(() => document.getElementById('sheet').hidden);
+  assert.notEqual(await roster.getAttribute('open'), null, 'Closing returns to the open roster');
+  await sheetTile.click();
+  await sheet.locator('.prop').first().waitFor();
+  await page.goBack();
+  await page.waitForFunction(() => document.getElementById('sheet').hidden, null, {timeout:5000});
+  assert.equal(await page.locator('article.card').count() > 0, true, 'Back closes the player screen, not the page');
   const unknownStatus = await page.evaluate(() => {
     const meta = S.injuryMeta;
     S.injuryMeta = null;
